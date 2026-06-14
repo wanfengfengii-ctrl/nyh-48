@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block title %}登录 - 传统钱庄汇票兑付协作系统{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center mt-5">
+    <div class="col-md-5 col-lg-4">
+        <div class="card card-qz shadow">
+            <div class="card-header text-center py-3">
+                <h4 class="mb-0"><i class="bi bi-bank2 me-2"></i>钱庄登录</h4>
+            </div>
+            <div class="card-body p-4">
+                {% if error %}
+                <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                    <i class="bi bi-exclamation-triangle me-2"></i>{{ error }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+                {% endif %}
+
+                <form method="post" action="/login">
+                    <div class="mb-3">
+                        <label for="username" class="form-label fw-bold">
+                            <i class="bi bi-person me-1"></i>用户名
+                        </label>
+                        <select class="form-select" id="username" name="username" required>
+                            <option value="">-- 请选择登录身份 --</option>
+                            <option value="zhanggui">王掌柜（掌柜）</option>
+                            <option value="jingban1">李经办（票号经办人）</option>
+                            <option value="jingban2">张经办（票号经办人）</option>
+                            <option value="fuhe1">赵复核（复核人）</option>
+                            <option value="fuhe2">钱复核（复核人）</option>
+                        </select>
+                    </div>
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-qz btn-lg">
+                            <i class="bi bi-box-arrow-in-right me-2"></i>登录钱庄
+                        </button>
+                    </div>
+                </form>
+
+                <hr class="my-4" style="border-color: var(--qz-accent);">
+
+                <div class="text-center" style="color: var(--qz-secondary); font-size: 0.85rem;">
+                    <p class="mb-1"><i class="bi bi-info-circle me-1"></i>角色权限说明</p>
+                    <small>
+                        <strong>掌柜</strong>：签发汇票、登记背书、提交兑付、作废汇票<br>
+                        <strong>票号经办人</strong>：签发汇票、登记背书、提交兑付<br>
+                        <strong>复核人</strong>：审核高额汇票兑付申请
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

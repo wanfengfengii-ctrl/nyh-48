@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+
+{% block title %}登记背书 - 传统钱庄汇票兑付协作系统{% endblock %}
+
+{% block content %}
+<div class="mb-3">
+    <a href="/bills/{{ bill.id }}" class="text-decoration-none" style="color: var(--qz-secondary);">
+        <i class="bi bi-arrow-left me-1"></i>返回汇票详情
+    </a>
+</div>
+
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card card-qz mb-4">
+            <div class="card-header">
+                <i class="bi bi-info-circle me-2"></i>汇票信息
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4">
+                        <strong style="color: var(--qz-secondary);">票号</strong>
+                        <div>{{ bill.bill_no }}</div>
+                    </div>
+                    <div class="col-md-4">
+                        <strong style="color: var(--qz-secondary);">票面金额</strong>
+                        <div>{{ bill.amount }} 两</div>
+                    </div>
+                    <div class="col-md-4">
+                        <strong style="color: var(--qz-secondary);">当前持票人</strong>
+                        <div class="fw-bold" style="color: var(--qz-primary);">{{ current_payee }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card card-qz">
+            <div class="card-header">
+                <i class="bi bi-arrow-left-right me-2"></i>登记背书转让
+            </div>
+            <div class="card-body p-4">
+                {% if errors %}
+                <div class="alert alert-danger">
+                    <i class="bi bi-exclamation-triangle me-2"></i><strong>请修正以下问题：</strong>
+                    <ul class="mb-0 mt-2">
+                        {% for e in errors %}
+                        <li>{{ e }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle me-2"></i>
+                    背书人须为当前持票人（{{ current_payee }}），背书日期须晚于签发日期（{{ bill.issue_date }}）。
+                </div>
+
+                <form method="post" action="/bills/{{ bill.id }}/endorse">
+                    <div class="mb-3">
+                        <label for="endorser" class="form-label fw-bold">
+                            <i class="bi bi-person me-1"></i>背书人
+                        </label>
+                        <input type="text" class="form-control" id="endorser" name="endorser"
+                               value="{{ form.endorser if form else current_payee }}" required>
+                        <div class="form-text">背书人应为当前持票人</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="endorsee" class="form-label fw-bold">
+                            <i class="bi bi-person-plus me-1"></i>被背书人
+                        </label>
+                        <input type="text" class="form-control" id="endorsee" name="endorsee"
+                               value="{{ form.endorsee if form else '' }}" required
+                               placeholder="请输入被背书人姓名">
+                    </div>
+                    <div class="mb-3">
+                        <label for="endorse_date" class="form-label fw-bold">
+                            <i class="bi bi-calendar me-1"></i>背书日期
+                        </label>
+                        <input type="date" class="form-control" id="endorse_date" name="endorse_date"
+                               value="{{ form.endorse_date if form else '' }}" required>
+                        <div class="form-text">背书日期必须晚于签发日期（{{ bill.issue_date }}）</div>
+                    </div>
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                        <a href="/bills/{{ bill.id }}" class="btn btn-outline-secondary">取消</a>
+                        <button type="submit" class="btn btn-qz">
+                            <i class="bi bi-check2-circle me-2"></i>确认背书
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

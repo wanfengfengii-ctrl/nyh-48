@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{% block title %}汇票管理 - 传统钱庄汇票兑付协作系统{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="fw-bold mb-0" style="color: var(--qz-primary);">
+        <i class="bi bi-file-earmark-text me-2"></i>汇票管理
+    </h4>
+    {% if user.role in ('掌柜', '票号经办人') %}
+    <a href="/bills/create" class="btn btn-qz">
+        <i class="bi bi-plus-circle me-2"></i>签发汇票
+    </a>
+    {% endif %}
+</div>
+
+<div class="mb-3">
+    <div class="btn-group" role="group">
+        <a href="/bills" class="btn btn-outline-secondary {% if not current_status %}active{% endif %}">
+            全部
+        </a>
+        <a href="/bills?status=有效" class="btn btn-outline-success {% if current_status == '有效' %}active{% endif %}">
+            有效
+        </a>
+        <a href="/bills?status=已兑付" class="btn btn-outline-primary {% if current_status == '已兑付' %}active{% endif %}">
+            已兑付
+        </a>
+        <a href="/bills?status=已作废" class="btn btn-outline-secondary {% if current_status == '已作废' %}active{% endif %}">
+            已作废
+        </a>
+    </div>
+</div>
+
+<div class="card card-qz">
+    <div class="card-body p-0">
+        {% if bills %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead style="background-color: var(--qz-light);">
+                    <tr>
+                        <th>票号</th>
+                        <th>票面金额</th>
+                        <th>签发人</th>
+                        <th>收款人</th>
+                        <th>签发日期</th>
+                        <th>到期日期</th>
+                        <th>状态</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for bill in bills %}
+                    <tr>
+                        <td><strong>{{ bill.bill_no }}</strong></td>
+                        <td>{{ bill.amount }} 两</td>
+                        <td>{{ bill.issuer_name }}</td>
+                        <td>{{ bill.payee }}</td>
+                        <td>{{ bill.issue_date }}</td>
+                        <td>{{ bill.due_date or '—' }}</td>
+                        <td>
+                            {% if bill.status == '有效' %}
+                            <span class="badge badge-valid">有效</span>
+                            {% elif bill.status == '已兑付' %}
+                            <span class="badge badge-redeemed">已兑付</span>
+                            {% else %}
+                            <span class="badge badge-voided">已作废</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <a href="/bills/{{ bill.id }}" class="btn btn-sm btn-qz">
+                                <i class="bi bi-eye me-1"></i>查看
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5 text-muted">
+            <i class="bi bi-inbox fs-1 d-block mb-3"></i>
+            <p>暂无汇票记录</p>
+            {% if user.role in ('掌柜', '票号经办人') %}
+            <a href="/bills/create" class="btn btn-qz"><i class="bi bi-plus-circle me-1"></i>签发第一张汇票</a>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

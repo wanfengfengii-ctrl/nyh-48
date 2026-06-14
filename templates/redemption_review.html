@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block title %}兑付审核 - 传统钱庄汇票兑付协作系统{% endblock %}
+
+{% block content %}
+<div class="mb-3">
+    <a href="/redemptions" class="text-decoration-none" style="color: var(--qz-secondary);">
+        <i class="bi bi-arrow-left me-1"></i>返回兑付列表
+    </a>
+</div>
+
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card card-qz mb-4">
+            <div class="card-header">
+                <i class="bi bi-file-earmark-text me-2"></i>兑付申请详情
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4">
+                        <strong style="color: var(--qz-secondary);">票号</strong>
+                        <div>{{ redemption.bill_no }}</div>
+                    </div>
+                    <div class="col-md-4">
+                        <strong style="color: var(--qz-secondary);">票面金额</strong>
+                        <div>{{ redemption.bill_amount }} 两</div>
+                    </div>
+                    <div class="col-md-4">
+                        <strong style="color: var(--qz-secondary);">兑付金额</strong>
+                        <div class="fw-bold" style="color: var(--qz-primary);">{{ redemption.amount }} 两</div>
+                    </div>
+                </div>
+                <hr>
+                <div class="row">
+                    <div class="col-md-4">
+                        <strong style="color: var(--qz-secondary);">收款人</strong>
+                        <div>{{ redemption.payee }}</div>
+                    </div>
+                    <div class="col-md-4">
+                        <strong style="color: var(--qz-secondary);">经办人</strong>
+                        <div>{{ redemption.operator_name }}</div>
+                    </div>
+                    <div class="col-md-4">
+                        <strong style="color: var(--qz-secondary);">申请日期</strong>
+                        <div>{{ redemption.request_date }}</div>
+                    </div>
+                </div>
+                {% if redemption.bill_amount >= 10000 %}
+                <div class="mt-3 alert alert-warning">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    此为高额汇票（票面 {{ redemption.bill_amount }} 两 ≥ 10000 两），需复核人审核通过后方可完成兑付。
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="card card-qz">
+            <div class="card-header">
+                <i class="bi bi-check2-square me-2"></i>复核审核
+            </div>
+            <div class="card-body p-4">
+                <form method="post" action="/redemptions/{{ redemption.id }}/review">
+                    <div class="mb-3">
+                        <label for="review_comment" class="form-label fw-bold">
+                            <i class="bi bi-chat-left-text me-1"></i>复核意见
+                        </label>
+                        <textarea class="form-control" id="review_comment" name="review_comment" rows="3"
+                                  placeholder="请填写复核意见（可选）"></textarea>
+                    </div>
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                        <a href="/redemptions" class="btn btn-outline-secondary">取消</a>
+                        <button type="submit" name="action" value="reject" class="btn btn-outline-danger"
+                                onclick="return confirm('确认拒绝此兑付申请？');">
+                            <i class="bi bi-x-circle me-2"></i>拒绝
+                        </button>
+                        <button type="submit" name="action" value="approve" class="btn btn-qz"
+                                onclick="return confirm('确认通过此兑付申请？');">
+                            <i class="bi bi-check-circle me-2"></i>通过
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

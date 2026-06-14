@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+
+{% block title %}签发汇票 - 传统钱庄汇票兑付协作系统{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+    <a href="/bills" class="text-decoration-none" style="color: var(--qz-secondary);">
+        <i class="bi bi-arrow-left me-1"></i>返回汇票列表
+    </a>
+</div>
+
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card card-qz">
+            <div class="card-header">
+                <i class="bi bi-plus-circle me-2"></i>签发新汇票
+            </div>
+            <div class="card-body p-4">
+                {% if errors %}
+                <div class="alert alert-danger">
+                    <i class="bi bi-exclamation-triangle me-2"></i><strong>请修正以下问题：</strong>
+                    <ul class="mb-0 mt-2">
+                        {% for e in errors %}
+                        <li>{{ e }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+
+                <form method="post" action="/bills/create">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="bill_no" class="form-label fw-bold">
+                                <i class="bi bi-upc-scan me-1"></i>票号
+                            </label>
+                            <input type="text" class="form-control" id="bill_no" name="bill_no"
+                                   value="{{ form.bill_no if form else '' }}" required
+                                   placeholder="例：HQ-2024-001">
+                            <div class="form-text">票号必须唯一，不可重复</div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="amount" class="form-label fw-bold">
+                                <i class="bi bi-cash me-1"></i>票面金额（两）
+                            </label>
+                            <input type="number" class="form-control" id="amount" name="amount"
+                                   value="{{ form.amount if form else '' }}" step="0.01" min="0.01" required
+                                   placeholder="请输入金额">
+                            <div class="form-text">金额 ≥ 10000 两的高额汇票需复核人审核</div>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="payee" class="form-label fw-bold">
+                            <i class="bi bi-person me-1"></i>收款人
+                        </label>
+                        <input type="text" class="form-control" id="payee" name="payee"
+                               value="{{ form.payee if form else '' }}" required
+                               placeholder="请输入收款人姓名">
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="issue_date" class="form-label fw-bold">
+                                <i class="bi bi-calendar-event me-1"></i>签发日期
+                            </label>
+                            <input type="date" class="form-control" id="issue_date" name="issue_date"
+                                   value="{{ form.issue_date if form else '' }}" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="due_date" class="form-label fw-bold">
+                                <i class="bi bi-calendar-check me-1"></i>到期日期（可选）
+                            </label>
+                            <input type="date" class="form-control" id="due_date" name="due_date"
+                                   value="{{ form.due_date if form else '' }}">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="remark" class="form-label fw-bold">
+                            <i class="bi bi-chat-left-text me-1"></i>备注
+                        </label>
+                        <textarea class="form-control" id="remark" name="remark" rows="3"
+                                  placeholder="可选填写备注信息">{{ form.remark if form else '' }}</textarea>
+                    </div>
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                        <a href="/bills" class="btn btn-outline-secondary">取消</a>
+                        <button type="submit" class="btn btn-qz">
+                            <i class="bi bi-check2-circle me-2"></i>确认签发
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

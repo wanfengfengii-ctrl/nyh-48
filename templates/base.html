@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}传统钱庄汇票兑付协作系统{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        :root {
+            --qz-primary: #8B4513;
+            --qz-secondary: #D2691E;
+            --qz-accent: #DAA520;
+            --qz-bg: #FFF8DC;
+            --qz-dark: #3E2723;
+            --qz-light: #FAEBD7;
+        }
+        body {
+            background-color: var(--qz-bg);
+            font-family: "Songti SC", "SimSun", "Noto Serif CJK SC", serif;
+            color: var(--qz-dark);
+        }
+        .navbar-qz {
+            background: linear-gradient(135deg, var(--qz-primary), var(--qz-secondary));
+            border-bottom: 3px solid var(--qz-accent);
+        }
+        .navbar-qz .navbar-brand,
+        .navbar-qz .nav-link,
+        .navbar-qz .text-light {
+            color: var(--qz-light) !important;
+        }
+        .navbar-qz .nav-link:hover {
+            color: var(--qz-accent) !important;
+        }
+        .navbar-qz .nav-link.active {
+            color: var(--qz-accent) !important;
+            font-weight: bold;
+        }
+        .card-qz {
+            border: 1px solid var(--qz-accent);
+            border-radius: 8px;
+            background: #FFFEF5;
+        }
+        .card-qz .card-header {
+            background: linear-gradient(135deg, var(--qz-primary), var(--qz-secondary));
+            color: var(--qz-light);
+            border-bottom: 2px solid var(--qz-accent);
+            font-weight: bold;
+        }
+        .btn-qz {
+            background: linear-gradient(135deg, var(--qz-primary), var(--qz-secondary));
+            color: var(--qz-light);
+            border: 1px solid var(--qz-accent);
+        }
+        .btn-qz:hover {
+            background: linear-gradient(135deg, var(--qz-secondary), var(--qz-primary));
+            color: var(--qz-accent);
+        }
+        .badge-valid { background-color: #198754; }
+        .badge-redeemed { background-color: #0d6efd; }
+        .badge-voided { background-color: #6c757d; }
+        .badge-pending { background-color: #fd7e14; }
+        .badge-approved { background-color: #198754; }
+        .badge-rejected { background-color: #dc3545; }
+        .timeline-item {
+            position: relative;
+            padding-left: 30px;
+            margin-bottom: 20px;
+            border-left: 3px solid var(--qz-accent);
+        }
+        .timeline-item::before {
+            content: '';
+            position: absolute;
+            left: -8px;
+            top: 4px;
+            width: 13px;
+            height: 13px;
+            border-radius: 50%;
+            background: var(--qz-secondary);
+            border: 2px solid var(--qz-accent);
+        }
+        .stat-card {
+            text-align: center;
+            padding: 20px;
+            border-radius: 10px;
+            background: #FFFEF5;
+            border: 1px solid var(--qz-accent);
+            transition: transform 0.2s;
+        }
+        .stat-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 4px 12px rgba(139, 69, 19, 0.2);
+        }
+        .stat-card .stat-number {
+            font-size: 2rem;
+            font-weight: bold;
+            color: var(--qz-primary);
+        }
+        .stat-card .stat-label {
+            color: var(--qz-secondary);
+            font-size: 0.9rem;
+        }
+        .endorsement-chain {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 5px;
+        }
+        .endorsement-chain .person {
+            background: var(--qz-light);
+            border: 1px solid var(--qz-accent);
+            padding: 4px 10px;
+            border-radius: 15px;
+            font-size: 0.85rem;
+        }
+        .endorsement-chain .arrow {
+            color: var(--qz-secondary);
+            font-weight: bold;
+        }
+        .form-control:focus, .form-select:focus {
+            border-color: var(--qz-accent);
+            box-shadow: 0 0 0 0.2rem rgba(218, 165, 32, 0.25);
+        }
+        footer {
+            background: var(--qz-primary);
+            color: var(--qz-light);
+            padding: 15px 0;
+            margin-top: 40px;
+            text-align: center;
+            font-size: 0.85rem;
+        }
+    </style>
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    {% if user %}
+    <nav class="navbar navbar-expand-lg navbar-qz">
+        <div class="container">
+            <a class="navbar-brand fw-bold" href="/dashboard">
+                <i class="bi bi-bank2 me-2"></i>传统钱庄汇票兑付协作系统
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/dashboard"><i class="bi bi-speedometer2 me-1"></i>总览</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/bills"><i class="bi bi-file-earmark-text me-1"></i>汇票管理</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/redemptions"><i class="bi bi-cash-coin me-1"></i>兑付管理</a>
+                    </li>
+                </ul>
+                <div class="d-flex align-items-center">
+                    <span class="text-light me-3">
+                        <i class="bi bi-person-circle me-1"></i>
+                        {{ user.real_name }}（<small>{{ user.role }}</small>）
+                    </span>
+                    <a href="/logout" class="btn btn-sm btn-outline-light"><i class="bi bi-box-arrow-right me-1"></i>退出</a>
+                </div>
+            </div>
+        </div>
+    </nav>
+    {% endif %}
+
+    <div class="container mt-4">
+        {% block content %}{% endblock %}
+    </div>
+
+    <footer>
+        <div class="container">
+            <p class="mb-0">传统钱庄汇票兑付协作系统 &copy; 癸卯年制</p>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+
+{% block title %}提交兑付 - 传统钱庄汇票兑付协作系统{% endblock %}
+
+{% block content %}
+<div class="mb-3">
+    <a href="/bills/{{ bill.id }}" class="text-decoration-none" style="color: var(--qz-secondary);">
+        <i class="bi bi-arrow-left me-1"></i>返回汇票详情
+    </a>
+</div>
+
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card card-qz mb-4">
+            <div class="card-header">
+                <i class="bi bi-info-circle me-2"></i>汇票信息
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3">
+                        <strong style="color: var(--qz-secondary);">票号</strong>
+                        <div>{{ bill.bill_no }}</div>
+                    </div>
+                    <div class="col-md-3">
+                        <strong style="color: var(--qz-secondary);">票面金额</strong>
+                        <div class="fw-bold" style="color: var(--qz-primary);">{{ bill.amount }} 两</div>
+                    </div>
+                    <div class="col-md-3">
+                        <strong style="color: var(--qz-secondary);">当前持票人</strong>
+                        <div>{{ current_payee }}</div>
+                    </div>
+                    <div class="col-md-3">
+                        {% if bill.amount >= 10000 %}
+                        <span class="badge bg-danger">高额汇票（需复核）</span>
+                        {% else %}
+                        <span class="badge bg-success">普通汇票（直接兑付）</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card card-qz">
+            <div class="card-header">
+                <i class="bi bi-cash-coin me-2"></i>提交兑付申请
+            </div>
+            <div class="card-body p-4">
+                {% if errors %}
+                <div class="alert alert-danger">
+                    <i class="bi bi-exclamation-triangle me-2"></i><strong>请修正以下问题：</strong>
+                    <ul class="mb-0 mt-2">
+                        {% for e in errors %}
+                        <li>{{ e }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle me-2"></i>
+                    兑付收款人将为当前持票人（{{ current_payee }}），兑付金额不得超过票面金额（{{ bill.amount }} 两）。
+                    {% if bill.amount >= 10000 %}
+                    此为高额汇票，提交后需复核人审核通过方可完成兑付。
+                    {% else %}
+                    此为普通汇票，提交后将直接完成兑付。
+                    {% endif %}
+                </div>
+
+                <form method="post" action="/bills/{{ bill.id }}/redeem">
+                    <div class="mb-3">
+                        <label for="amount" class="form-label fw-bold">
+                            <i class="bi bi-cash me-1"></i>兑付金额（两）
+                        </label>
+                        <input type="number" class="form-control" id="amount" name="amount"
+                               value="{{ form.amount if form else bill.amount }}" step="0.01" min="0.01"
+                               max="{{ bill.amount }}" required>
+                        <div class="form-text">兑付金额不能超过票面金额 {{ bill.amount }} 两</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">
+                            <i class="bi bi-person me-1"></i>收款人
+                        </label>
+                        <input type="text" class="form-control" value="{{ current_payee }}" disabled>
+                        <div class="form-text">兑付收款人必须与最后一位背书人（当前持票人）一致</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="request_date" class="form-label fw-bold">
+                            <i class="bi bi-calendar me-1"></i>申请日期
+                        </label>
+                        <input type="date" class="form-control" id="request_date" name="request_date"
+                               value="{{ form.request_date if form else '' }}" required>
+                    </div>
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                        <a href="/bills/{{ bill.id }}" class="btn btn-outline-secondary">取消</a>
+                        <button type="submit" class="btn btn-qz">
+                            <i class="bi bi-check2-circle me-2"></i>确认提交
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

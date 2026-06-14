@@ -1,0 +1,214 @@
+{% extends "base.html" %}
+
+{% block title %}汇票 {{ bill.bill_no }} - 传统钱庄汇票兑付协作系统{% endblock %}
+
+{% block content %}
+<div class="mb-3">
+    <a href="/bills" class="text-decoration-none" style="color: var(--qz-secondary);">
+        <i class="bi bi-arrow-left me-1"></i>返回汇票列表
+    </a>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-8">
+        <div class="card card-qz mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-file-earmark-text me-2"></i>汇票 {{ bill.bill_no }}</span>
+                {% if bill.status == '有效' %}
+                <span class="badge badge-valid fs-6">有效</span>
+                {% elif bill.status == '已兑付' %}
+                <span class="badge badge-redeemed fs-6">已兑付</span>
+                {% else %}
+                <span class="badge badge-voided fs-6">已作废</span>
+                {% endif %}
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <table class="table table-sm">
+                            <tr>
+                                <th style="color: var(--qz-secondary); width: 100px;">票号</th>
+                                <td>{{ bill.bill_no }}</td>
+                            </tr>
+                            <tr>
+                                <th style="color: var(--qz-secondary);">票面金额</th>
+                                <td><strong style="color: var(--qz-primary); font-size: 1.2rem;">{{ bill.amount }} 两</strong>
+                                    {% if bill.amount >= high_value_threshold %}
+                                    <span class="badge bg-danger ms-2">高额</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            <tr>
+                                <th style="color: var(--qz-secondary);">签发人</th>
+                                <td>{{ bill.issuer_name }}</td>
+                            </tr>
+                            <tr>
+                                <th style="color: var(--qz-secondary);">收款人</th>
+                                <td>{{ bill.payee }}</td>
+                            </tr>
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        <table class="table table-sm">
+                            <tr>
+                                <th style="color: var(--qz-secondary); width: 100px;">签发日期</th>
+                                <td>{{ bill.issue_date }}</td>
+                            </tr>
+                            <tr>
+                                <th style="color: var(--qz-secondary);">到期日期</th>
+                                <td>{{ bill.due_date or '未指定' }}</td>
+                            </tr>
+                            <tr>
+                                <th style="color: var(--qz-secondary);">备注</th>
+                                <td>{{ bill.remark or '无' }}</td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="mt-2 p-3 rounded" style="background: var(--qz-light); border: 1px dashed var(--qz-accent);">
+                    <strong style="color: var(--qz-secondary);"><i class="bi bi-person-check me-1"></i>当前持票人：</strong>
+                    <span class="fw-bold" style="color: var(--qz-primary);">{{ current_payee }}</span>
+                </div>
+
+                {% if can_endorse or can_redeem or can_void %}
+                <div class="mt-3 d-flex flex-wrap gap-2">
+                    {% if can_endorse %}
+                    <a href="/bills/{{ bill.id }}/endorse" class="btn btn-qz">
+                        <i class="bi bi-arrow-right-circle me-1"></i>登记背书
+                    </a>
+                    {% endif %}
+                    {% if can_redeem %}
+                    <a href="/bills/{{ bill.id }}/redeem" class="btn btn-outline-primary">
+                        <i class="bi bi-cash-coin me-1"></i>提交兑付
+                    </a>
+                    {% endif %}
+                    {% if can_void %}
+                    <form method="post" action="/bills/{{ bill.id }}/void"
+                          onsubmit="return confirm('确认作废此汇票？此操作不可撤销！');">
+                        <button type="submit" class="btn btn-outline-danger">
+                            <i class="bi bi-x-circle me-1"></i>作废汇票
+                        </button>
+                    </form>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        {% if endorsements %}
+        <div class="card card-qz mb-4">
+            <div class="card-header">
+                <i class="bi bi-arrow-left-right me-2"></i>背书转让链
+            </div>
+            <div class="card-body">
+                <div class="endorsement-chain mb-3">
+                    <span class="person"><i class="bi bi-person me-1"></i>{{ bill.payee }}</span>
+                    {% for e in endorsements %}
+                    <span class="arrow"><i class="bi bi-arrow-right"></i></span>
+                    <span class="person"><i class="bi bi-person me-1"></i>{{ e.endorsee }}</span>
+                    {% endfor %}
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover">
+                        <thead style="background-color: var(--qz-light);">
+                            <tr>
+                                <th>序号</th>
+                                <th>背书人</th>
+                                <th>被背书人</th>
+                                <th>背书日期</th>
+                                <th>经办人</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for e in endorsements %}
+                            <tr>
+                                <td>{{ loop.index }}</td>
+                                <td>{{ e.endorser }}</td>
+                                <td>{{ e.endorsee }}</td>
+                                <td>{{ e.endorse_date }}</td>
+                                <td>{{ e.operator_name }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if redemptions %}
+        <div class="card card-qz mb-4">
+            <div class="card-header">
+                <i class="bi bi-cash-coin me-2"></i>兑付记录
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead style="background-color: var(--qz-light);">
+                            <tr>
+                                <th>兑付金额</th>
+                                <th>收款人</th>
+                                <th>申请日期</th>
+                                <th>经办人</th>
+                                <th>状态</th>
+                                <th>复核人</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for r in redemptions %}
+                            <tr>
+                                <td>{{ r.amount }} 两</td>
+                                <td>{{ r.payee }}</td>
+                                <td>{{ r.request_date }}</td>
+                                <td>{{ r.operator_name }}</td>
+                                <td>
+                                    {% if r.status == '待复核' %}
+                                    <span class="badge badge-pending">待复核</span>
+                                    {% elif r.status == '已完成' %}
+                                    <span class="badge badge-approved">已完成</span>
+                                    {% else %}
+                                    <span class="badge badge-rejected">已拒绝</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ r.reviewer_name or '—' }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card card-qz">
+            <div class="card-header">
+                <i class="bi bi-clock-history me-2"></i>流转时间线
+            </div>
+            <div class="card-body">
+                {% if timeline %}
+                {% for item in timeline %}
+                <div class="timeline-item">
+                    <div class="d-flex justify-content-between">
+                        <strong style="color: var(--qz-primary);">{{ item.action }}</strong>
+                        <small class="text-muted">{{ item.action_date }}</small>
+                    </div>
+                    <div class="text-muted" style="font-size: 0.85rem;">
+                        <div><i class="bi bi-person me-1"></i>{{ item.actor }}</div>
+                        {% if item.detail %}
+                        <div class="mt-1">{{ item.detail }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+                {% else %}
+                <p class="text-muted text-center">暂无流转记录</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
