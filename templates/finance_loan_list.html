@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+
+{% block title %}押汇融资 - 传统钱庄汇票协同清算与额度风控系统{% endblock %}
+
+{% block extra_css %}
+<style>
+    .badge-pending { background-color: #fd7e14; }
+    .badge-info { background-color: #0dcaf0; color: #000; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="fw-bold mb-0" style="color: var(--qz-primary);">
+        <i class="bi bi-cash-coin me-2"></i>押汇融资
+    </h4>
+    {% if user.role in OPERATOR_ROLES %}
+    <a href="/finance/loans/apply" class="btn btn-qz">
+        <i class="bi bi-plus-circle me-2"></i>申请押汇
+    </a>
+    {% endif %}
+</div>
+
+<div class="mb-3">
+    <div class="btn-group flex-wrap" role="group">
+        <a href="/finance/loans" class="btn btn-outline-secondary {% if not current_status %}active{% endif %}">
+            全部
+        </a>
+        <a href="/finance/loans?status=待审核" class="btn btn-outline-warning {% if current_status == '待审核' %}active{% endif %}">
+            待审核
+        </a>
+        <a href="/finance/loans?status=已复核" class="btn btn-outline-info {% if current_status == '已复核' %}active{% endif %}">
+            已复核
+        </a>
+        <a href="/finance/loans?status=已放款" class="btn btn-outline-success {% if current_status == '已放款' %}active{% endif %}">
+            已放款
+        </a>
+        <a href="/finance/loans?status=还款中" class="btn btn-outline-primary {% if current_status == '还款中' %}active{% endif %}">
+            还款中
+        </a>
+        <a href="/finance/loans?status=已结清" class="btn btn-outline-success {% if current_status == '已结清' %}active{% endif %}">
+            已结清
+        </a>
+        <a href="/finance/loans?status=已逾期" class="btn btn-outline-danger {% if current_status == '已逾期' %}active{% endif %}">
+            已逾期
+        </a>
+        <a href="/finance/loans?status=已拒绝" class="btn btn-outline-danger {% if current_status == '已拒绝' %}active{% endif %}">
+            已拒绝
+        </a>
+    </div>
+</div>
+
+<div class="card card-qz">
+    <div class="card-body p-0">
+        {% if loans %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead style="background-color: var(--qz-light);">
+                    <tr>
+                        <th>票号</th>
+                        <th>客户</th>
+                        <th>融资金额</th>
+                        <th>年利率</th>
+                        <th>到期日</th>
+                        <th>经办人</th>
+                        <th>状态</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for loan in loans %}
+                    <tr>
+                        <td><strong>{{ loan.bill_no }}</strong></td>
+                        <td>{{ loan.customer_name }}</td>
+                        <td><strong style="color: var(--qz-primary);">{{ loan.loan_amount }} 两</strong></td>
+                        <td>{{ loan.rate_annual }}％</td>
+                        <td>{{ loan.due_date }}</td>
+                        <td>{{ loan.applicant_name }}</td>
+                        <td>
+                            {% if loan.status == '待审核' %}
+                            <span class="badge badge-pending">待审核</span>
+                            {% elif loan.status == '已复核' %}
+                            <span class="badge badge-info">已复核</span>
+                            {% elif loan.status == '已放款' %}
+                            <span class="badge badge-valid">已放款</span>
+                            {% elif loan.status == '还款中' %}
+                            <span class="badge badge-settled">还款中</span>
+                            {% elif loan.status == '已结清' %}
+                            <span class="badge badge-approved">已结清</span>
+                            {% elif loan.status == '已逾期' %}
+                            <span class="badge badge-lost">已逾期</span>
+                            {% elif loan.status == '已拒绝' %}
+                            <span class="badge badge-rejected">已拒绝</span>
+                            {% elif loan.status == '已取消' %}
+                            <span class="badge badge-voided">已取消</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <a href="/finance/loans/{{ loan.id }}" class="btn btn-sm btn-qz">
+                                <i class="bi bi-eye me-1"></i>查看
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5 text-muted">
+            <i class="bi bi-inbox fs-1 d-block mb-3"></i>
+            <p>暂无押汇融资记录</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

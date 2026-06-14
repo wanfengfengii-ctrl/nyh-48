@@ -20,6 +20,8 @@
                 <select class="form-select form-select-lg" id="report_type" name="report_type">
                     <option value="daily" {% if report_data and report_data.type == '日' %}selected{% endif %}>日报表</option>
                     <option value="monthly" {% if report_data and report_data.type == '月' %}selected{% endif %}>月报表</option>
+                    <option value="finance" {% if report_data and report_data.type == '融资' %}selected{% endif %}>融资报表</option>
+                    <option value="collection" {% if report_data and report_data.type == '催收' %}selected{% endif %}>催收追偿报表</option>
                 </select>
             </div>
             <div class="col-md-3">
@@ -42,6 +44,7 @@
 </div>
 
 {% if report_data %}
+{% if report_data.type in ('日', '月') %}
 <div class="card card-qz mb-4">
     <div class="card-header d-flex justify-content-between align-items-center">
         <span><i class="bi bi-bar-chart-line me-2"></i>{{ report_data.type }}报表：{{ report_data.start_date }} ~ {{ report_data.end_date }}</span>
@@ -177,6 +180,141 @@
         </div>
     </div>
 </div>
+{% elif report_data.type == '融资' %}
+<div class="card card-qz mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-cash-stack me-2"></i>融资报表：{{ report_data.start_date }} ~ {{ report_data.end_date }}</span>
+        <button type="button" class="btn btn-sm btn-outline-light" onclick="window.print()"><i class="bi bi-printer me-1"></i>打印</button>
+    </div>
+    <div class="card-body">
+        <div class="row g-3 mb-4">
+            <div class="col-md-3">
+                <div class="stat-card">
+                    <div class="stat-number">{{ report_data.total_loans }}</div>
+                    <div class="stat-label">融资总笔数</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-card">
+                    <div class="stat-number" style="color: var(--qz-primary);">{{ "%.0f"|format(report_data.total_loan_amount) }}</div>
+                    <div class="stat-label">融资总额（两）</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-card">
+                    <div class="stat-number" style="color: #198754;">{{ "%.0f"|format(report_data.total_paid) }}</div>
+                    <div class="stat-label">已还本金（两）</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-card">
+                    <div class="stat-number" style="color: #dc3545;">{{ report_data.overdue_count }}</div>
+                    <div class="stat-label">逾期笔数</div>
+                </div>
+            </div>
+        </div>
+        {% if report_data.customer_stats %}
+        <div class="card card-qz mb-3">
+            <div class="card-header"><i class="bi bi-people me-2"></i>客户融资统计</div>
+            <div class="card-body p-0">
+                <table class="table table-hover mb-0">
+                    <thead style="background-color: var(--qz-light);">
+                        <tr><th>客户</th><th>融资笔数</th><th>融资金额</th><th>已还金额</th><th>剩余金额</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for cs in report_data.customer_stats %}
+                        <tr>
+                            <td><strong>{{ cs.customer_name }}</strong></td>
+                            <td>{{ cs.cnt }}</td>
+                            <td>{{ "%.0f"|format(cs.total_amount) }} 两</td>
+                            <td>{{ "%.0f"|format(cs.total_paid) }} 两</td>
+                            <td>{{ "%.0f"|format(cs.total_amount - cs.total_paid) }} 两</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+        {% if report_data.interest_summary %}
+        <div class="card card-qz">
+            <div class="card-header"><i class="bi bi-calculator me-2"></i>利息汇总</div>
+            <div class="card-body">
+                <p>应计利息总额：<strong style="color: var(--qz-primary);">{{ "%.2f"|format(report_data.interest_summary.total_accrued) }} 两</strong></p>
+                <p>已收利息总额：<strong style="color: #198754;">{{ "%.2f"|format(report_data.interest_summary.total_collected) }} 两</strong></p>
+                <p>待收利息：<strong style="color: #dc3545;">{{ "%.2f"|format(report_data.interest_summary.total_accrued - report_data.interest_summary.total_collected) }} 两</strong></p>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% elif report_data.type == '催收' %}
+<div class="card card-qz mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-bell me-2"></i>催收追偿报表：{{ report_data.start_date }} ~ {{ report_data.end_date }}</span>
+        <button type="button" class="btn btn-sm btn-outline-light" onclick="window.print()"><i class="bi bi-printer me-1"></i>打印</button>
+    </div>
+    <div class="card-body">
+        <div class="row g-3 mb-4">
+            <div class="col-md-3">
+                <div class="stat-card">
+                    <div class="stat-number">{{ report_data.reminder_count }}</div>
+                    <div class="stat-label">催收提醒数</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-card">
+                    <div class="stat-number" style="color: #fd7e14;">{{ report_data.overdue_loan_count }}</div>
+                    <div class="stat-label">逾期融资数</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-card">
+                    <div class="stat-number" style="color: #198754;">{{ report_data.recovery_count }}</div>
+                    <div class="stat-label">追偿笔数</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-card">
+                    <div class="stat-number" style="color: #dc3545;">{{ "%.0f"|format(report_data.bad_debt_count) }}</div>
+                    <div class="stat-label">坏账笔数</div>
+                </div>
+            </div>
+        </div>
+        {% if report_data.recovery_stats %}
+        <div class="card card-qz mb-3">
+            <div class="card-header"><i class="bi bi-arrow-repeat me-2"></i>追偿方式统计</div>
+            <div class="card-body p-0">
+                <table class="table table-hover mb-0">
+                    <thead style="background-color: var(--qz-light);">
+                        <tr><th>追偿方式</th><th>笔数</th><th>追偿金额（两）</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for rs in report_data.recovery_stats %}
+                        <tr>
+                            <td><strong>{{ rs.recovery_type }}</strong></td>
+                            <td>{{ rs.cnt }}</td>
+                            <td>{{ "%.0f"|format(rs.total_amount) }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+        {% if report_data.bad_debt_summary %}
+        <div class="card card-qz">
+            <div class="card-header"><i class="bi bi-exclamation-octagon me-2"></i>坏账汇总</div>
+            <div class="card-body">
+                <p>坏账总额：<strong class="text-danger">{{ "%.2f"|format(report_data.bad_debt_summary.total_principal) }} 两</strong></p>
+                <p>减值准备：<strong style="color: #fd7e14;">{{ "%.2f"|format(report_data.bad_debt_summary.total_provision) }} 两</strong></p>
+                <p>已处置回收：<strong style="color: #198754;">{{ "%.2f"|format(report_data.bad_debt_summary.total_disposal) }} 两</strong></p>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
 {% else %}
 <div class="card card-qz">
     <div class="card-body text-center py-5">

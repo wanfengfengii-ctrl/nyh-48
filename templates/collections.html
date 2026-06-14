@@ -1,0 +1,580 @@
+{% extends "base.html" %}
+
+{% block title %}催收追偿管理 - 传统钱庄汇票协同清算与额度风控系统{% endblock %}
+
+{% block extra_css %}
+<style>
+    .badge-info { background-color: #0dcaf0; color: #000; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+    <h4 class="fw-bold" style="color: var(--qz-primary);">
+        <i class="bi bi-shield-exclamation me-2"></i>催收追偿管理
+    </h4>
+</div>
+
+<ul class="nav nav-tabs mb-3" id="collectionTab" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="loans-tab" data-bs-toggle="tab" data-bs-target="#loans-pane"
+                type="button" role="tab" style="color: var(--qz-primary);">
+            <i class="bi bi-cash-coin me-1"></i>活跃融资
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="reminders-tab" data-bs-toggle="tab" data-bs-target="#reminders-pane"
+                type="button" role="tab" style="color: var(--qz-primary);">
+            <i class="bi bi-bell me-1"></i>催收记录
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="recovery-tab" data-bs-toggle="tab" data-bs-target="#recovery-pane"
+                type="button" role="tab" style="color: var(--qz-primary);">
+            <i class="bi bi-arrow-repeat me-1"></i>追偿与坏账
+        </button>
+    </li>
+</ul>
+
+<div class="tab-content" id="collectionTabContent">
+    <div class="tab-pane fade show active" id="loans-pane" role="tabpanel">
+        <div class="card card-qz">
+            <div class="card-body p-0">
+                {% if active_loans %}
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead style="background-color: var(--qz-light);">
+                            <tr>
+                                <th>票号</th>
+                                <th>客户</th>
+                                <th>融资金额（两）</th>
+                                <th>已还金额（两）</th>
+                                <th>到期日</th>
+                                <th>状态</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for l in active_loans %}
+                            <tr>
+                                <td><strong>{{ l.bill_no }}</strong></td>
+                                <td>{{ l.customer_name }}</td>
+                                <td>{{ "%.2f"|format(l.loan_amount) }}</td>
+                                <td>{{ "%.2f"|format(l.repaid_amount) }}</td>
+                                <td>{{ l.due_date }}</td>
+                                <td>
+                                    {% if l.status == '已逾期' %}
+                                    <span class="badge bg-danger">已逾期</span>
+                                    {% elif l.status == '还款中' %}
+                                    <span class="badge bg-warning text-dark">还款中</span>
+                                    {% else %}
+                                    <span class="badge badge-valid">已放款</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-warning" data-bs-toggle="modal"
+                                            data-bs-target="#reminderModal" data-loan-id="{{ l.id }}"
+                                            data-loan-no="{{ l.bill_no }}" data-loan-customer="{{ l.customer_name }}">
+                                        <i class="bi bi-bell me-1"></i>催收
+                                    </button>
+                                    {% if l.status == '已逾期' and user.role in ('总号掌柜', '分号掌柜') %}
+                                    <button class="btn btn-sm btn-outline-info" data-bs-toggle="modal"
+                                            data-bs-target="#recoveryModal" data-loan-id="{{ l.id }}"
+                                            data-loan-no="{{ l.bill_no }}" data-loan-customer="{{ l.customer_name }}">
+                                        <i class="bi bi-arrow-repeat me-1"></i>追偿
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-danger" data-bs-toggle="modal"
+                                            data-bs-target="#badDebtModal" data-loan-id="{{ l.id }}"
+                                            data-loan-no="{{ l.bill_no }}" data-loan-customer="{{ l.customer_name }}">
+                                        <i class="bi bi-exclamation-triangle me-1"></i>坏账
+                                    </button>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-5 text-muted">
+                    <i class="bi bi-cash-coin fs-1 d-block mb-3"></i>
+                    <p>暂无活跃融资记录</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="tab-pane fade" id="reminders-pane" role="tabpanel">
+        <div class="card card-qz">
+            <div class="card-body p-0">
+                {% if reminders %}
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead style="background-color: var(--qz-light);">
+                            <tr>
+                                <th>票号</th>
+                                <th>客户</th>
+                                <th>催收类型</th>
+                                <th>催收日期</th>
+                                <th>内容</th>
+                                <th>操作人</th>
+                                <th>状态</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for r in reminders %}
+                            <tr>
+                                <td><strong>{{ r.bill_no }}</strong></td>
+                                <td>{{ r.customer_name }}</td>
+                                <td>{{ r.reminder_type }}</td>
+                                <td>{{ r.reminder_date }}</td>
+                                <td>{{ r.content }}</td>
+                                <td>{{ r.operator_name }}</td>
+                                <td>
+                                    {% if r.status == '待处理' %}
+                                    <span class="badge badge-pending">待处理</span>
+                                    {% elif r.status == '已通知' %}
+                                    <span class="badge badge-info">已通知</span>
+                                    {% elif r.status == '已回应' %}
+                                    <span class="badge badge-valid">已回应</span>
+                                    {% else %}
+                                    <span class="badge badge-voided">已忽略</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if r.status in ('待处理', '已通知') %}
+                                    <button class="btn btn-sm btn-qz" data-bs-toggle="modal"
+                                            data-bs-target="#reminderStatusModal"
+                                            data-reminder-id="{{ r.id }}"
+                                            data-reminder-status="{{ r.status }}">
+                                        <i class="bi bi-pencil me-1"></i>更新
+                                    </button>
+                                    {% else %}
+                                    <span class="text-muted">—</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-5 text-muted">
+                    <i class="bi bi-bell fs-1 d-block mb-3"></i>
+                    <p>暂无催收记录</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="tab-pane fade" id="recovery-pane" role="tabpanel">
+        <div class="card card-qz mb-4">
+            <div class="card-header">
+                <i class="bi bi-arrow-repeat me-2"></i>追偿记录
+            </div>
+            <div class="card-body p-0">
+                {% if recoveries %}
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead style="background-color: var(--qz-light);">
+                            <tr>
+                                <th>票号</th>
+                                <th>客户</th>
+                                <th>追偿方式</th>
+                                <th>金额（两）</th>
+                                <th>日期</th>
+                                <th>状态</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for r in recoveries %}
+                            <tr>
+                                <td><strong>{{ r.bill_no }}</strong></td>
+                                <td>{{ r.customer_name }}</td>
+                                <td>{{ r.recovery_type }}</td>
+                                <td class="fw-bold">{{ "%.2f"|format(r.recovery_amount) }}</td>
+                                <td>{{ r.recovery_date }}</td>
+                                <td>
+                                    {% if r.status == '进行中' %}
+                                    <span class="badge bg-warning text-dark">进行中</span>
+                                    {% elif r.status == '已完成' %}
+                                    <span class="badge badge-valid">已完成</span>
+                                    {% else %}
+                                    <span class="badge badge-voided">已终止</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-4 text-muted">
+                    <i class="bi bi-arrow-repeat fs-3 d-block mb-2"></i>
+                    <p class="mb-0">暂无追偿记录</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="card card-qz">
+            <div class="card-header">
+                <i class="bi bi-exclamation-triangle me-2"></i>坏账记录
+            </div>
+            <div class="card-body p-0">
+                {% if bad_debts %}
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead style="background-color: var(--qz-light);">
+                            <tr>
+                                <th>票号</th>
+                                <th>客户</th>
+                                <th>剩余本金（两）</th>
+                                <th>剩余利息（两）</th>
+                                <th>减值准备（两）</th>
+                                <th>坏账日期</th>
+                                <th>状态</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for b in bad_debts %}
+                            <tr>
+                                <td><strong>{{ b.bill_no }}</strong></td>
+                                <td>{{ b.customer_name }}</td>
+                                <td>{{ "%.2f"|format(b.principal_remaining) }}</td>
+                                <td>{{ "%.2f"|format(b.interest_remaining) }}</td>
+                                <td>{{ "%.2f"|format(b.provision_amount) }}</td>
+                                <td>{{ b.bad_debt_date }}</td>
+                                <td>
+                                    {% if b.status == '已登记' %}
+                                    <span class="badge badge-pending">已登记</span>
+                                    {% elif b.status == '已计提准备' %}
+                                    <span class="badge badge-info">已计提准备</span>
+                                    {% elif b.status == '已处置' %}
+                                    <span class="badge badge-approved">已处置</span>
+                                    {% else %}
+                                    <span class="badge badge-voided">已核销</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if user.role == '总号掌柜' and b.status not in ('已核销',) %}
+                                    <button class="btn btn-sm btn-qz" data-bs-toggle="modal"
+                                            data-bs-target="#badDebtStatusModal"
+                                            data-bd-id="{{ b.id }}"
+                                            data-bd-status="{{ b.status }}">
+                                        <i class="bi bi-pencil me-1"></i>更新状态
+                                    </button>
+                                    {% else %}
+                                    <span class="text-muted">—</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-4 text-muted">
+                    <i class="bi bi-exclamation-triangle fs-3 d-block mb-2"></i>
+                    <p class="mb-0">暂无坏账记录</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="reminderModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="/collections/reminder">
+                <div class="modal-header" style="background: linear-gradient(135deg, var(--qz-primary), var(--qz-secondary)); color: var(--qz-light);">
+                    <h5 class="modal-title"><i class="bi bi-bell me-2"></i>催收通知</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" name="loan_id" id="reminder_loan_id">
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">融资票据</label>
+                        <input type="text" class="form-control" id="reminder_loan_info" disabled>
+                    </div>
+                    <div class="mb-3">
+                        <label for="reminder_type" class="form-label fw-bold">
+                            <i class="bi bi-tag me-1"></i>催收类型 <span class="text-danger">*</span>
+                        </label>
+                        <select class="form-select" id="reminder_type" name="reminder_type" required>
+                            <option value="到期提醒">到期提醒</option>
+                            <option value="逾期催收">逾期催收</option>
+                            <option value="法律催收">法律催收</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="reminder_date" class="form-label fw-bold">
+                            <i class="bi bi-calendar me-1"></i>催收日期 <span class="text-danger">*</span>
+                        </label>
+                        <input type="date" class="form-control" id="reminder_date" name="reminder_date" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="reminder_content" class="form-label fw-bold">
+                            <i class="bi bi-journal-text me-1"></i>催收内容 <span class="text-danger">*</span>
+                        </label>
+                        <textarea class="form-control" id="reminder_content" name="content" rows="3" required></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-qz"><i class="bi bi-send me-1"></i>提交催收</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="recoveryModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="/collections/recovery">
+                <div class="modal-header" style="background: linear-gradient(135deg, var(--qz-primary), var(--qz-secondary)); color: var(--qz-light);">
+                    <h5 class="modal-title"><i class="bi bi-arrow-repeat me-2"></i>追偿登记</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" name="loan_id" id="recovery_loan_id">
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">融资票据</label>
+                        <input type="text" class="form-control" id="recovery_loan_info" disabled>
+                    </div>
+                    <div class="mb-3">
+                        <label for="recovery_type" class="form-label fw-bold">
+                            <i class="bi bi-tag me-1"></i>追偿方式 <span class="text-danger">*</span>
+                        </label>
+                        <select class="form-select" id="recovery_type" name="recovery_type" required>
+                            <option value="协商还款">协商还款</option>
+                            <option value="担保代偿">担保代偿</option>
+                            <option value="资产抵扣">资产抵扣</option>
+                            <option value="诉讼追偿">诉讼追偿</option>
+                            <option value="其他">其他</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="recovery_amount" class="form-label fw-bold">
+                            <i class="bi bi-cash-coin me-1"></i>追偿金额（两） <span class="text-danger">*</span>
+                        </label>
+                        <input type="number" class="form-control" id="recovery_amount" name="recovery_amount"
+                               step="0.01" min="0" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="recovery_date" class="form-label fw-bold">
+                            <i class="bi bi-calendar me-1"></i>追偿日期 <span class="text-danger">*</span>
+                        </label>
+                        <input type="date" class="form-control" id="recovery_date" name="recovery_date" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="recovery_remark" class="form-label fw-bold">
+                            <i class="bi bi-journal-text me-1"></i>备注
+                        </label>
+                        <textarea class="form-control" id="recovery_remark" name="remark" rows="2"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-qz"><i class="bi bi-save me-1"></i>提交追偿</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="badDebtModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="/collections/bad-debt">
+                <div class="modal-header" style="background: linear-gradient(135deg, var(--qz-primary), var(--qz-secondary)); color: var(--qz-light);">
+                    <h5 class="modal-title"><i class="bi bi-exclamation-triangle me-2"></i>坏账登记</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" name="loan_id" id="baddebt_loan_id">
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">融资票据</label>
+                        <input type="text" class="form-control" id="baddebt_loan_info" disabled>
+                    </div>
+                    <div class="mb-3">
+                        <label for="principal_remaining" class="form-label fw-bold">
+                            <i class="bi bi-wallet2 me-1"></i>剩余本金（两） <span class="text-danger">*</span>
+                        </label>
+                        <input type="number" class="form-control" id="principal_remaining" name="principal_remaining"
+                               step="0.01" min="0" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="interest_remaining" class="form-label fw-bold">
+                            <i class="bi bi-percent me-1"></i>剩余利息（两） <span class="text-danger">*</span>
+                        </label>
+                        <input type="number" class="form-control" id="interest_remaining" name="interest_remaining"
+                               step="0.01" min="0" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="provision_amount" class="form-label fw-bold">
+                            <i class="bi bi-shield me-1"></i>减值准备金额（两） <span class="text-danger">*</span>
+                        </label>
+                        <input type="number" class="form-control" id="provision_amount" name="provision_amount"
+                               step="0.01" min="0" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="provision_ratio" class="form-label fw-bold">
+                            <i class="bi bi-pie-chart me-1"></i>减值准备比例（%） <span class="text-danger">*</span>
+                        </label>
+                        <input type="number" class="form-control" id="provision_ratio" name="provision_ratio"
+                               step="0.01" min="0" max="100" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="bad_debt_date" class="form-label fw-bold">
+                            <i class="bi bi-calendar me-1"></i>坏账日期 <span class="text-danger">*</span>
+                        </label>
+                        <input type="date" class="form-control" id="bad_debt_date" name="bad_debt_date" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="bad_debt_remark" class="form-label fw-bold">
+                            <i class="bi bi-journal-text me-1"></i>备注
+                        </label>
+                        <textarea class="form-control" id="bad_debt_remark" name="remark" rows="2"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-qz"><i class="bi bi-save me-1"></i>提交坏账</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="reminderStatusModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" id="reminderStatusForm">
+                <div class="modal-header" style="background: linear-gradient(135deg, var(--qz-primary), var(--qz-secondary)); color: var(--qz-light);">
+                    <h5 class="modal-title"><i class="bi bi-pencil me-2"></i>更新催收状态</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="reminder_status" class="form-label fw-bold">
+                            <i class="bi bi-flag me-1"></i>状态 <span class="text-danger">*</span>
+                        </label>
+                        <select class="form-select" id="reminder_status" name="status" required>
+                            <option value="待处理">待处理</option>
+                            <option value="已通知">已通知</option>
+                            <option value="已回应">已回应</option>
+                            <option value="已忽略">已忽略</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="reminder_response" class="form-label fw-bold">
+                            <i class="bi bi-journal-text me-1"></i>回应内容
+                        </label>
+                        <textarea class="form-control" id="reminder_response" name="response" rows="3"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-qz"><i class="bi bi-save me-1"></i>更新状态</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="badDebtStatusModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" id="badDebtStatusForm">
+                <div class="modal-header" style="background: linear-gradient(135deg, var(--qz-primary), var(--qz-secondary)); color: var(--qz-light);">
+                    <h5 class="modal-title"><i class="bi bi-pencil me-2"></i>更新坏账状态</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="bd_status" class="form-label fw-bold">
+                            <i class="bi bi-flag me-1"></i>状态 <span class="text-danger">*</span>
+                        </label>
+                        <select class="form-select" id="bd_status" name="status" required>
+                            <option value="已登记">已登记</option>
+                            <option value="已计提准备">已计提准备</option>
+                            <option value="已处置">已处置</option>
+                            <option value="已核销">已核销</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="disposal_type" class="form-label fw-bold">
+                            <i class="bi bi-tag me-1"></i>处置方式
+                        </label>
+                        <select class="form-select" id="disposal_type" name="disposal_type">
+                            <option value="">请选择</option>
+                            <option value="现金收回">现金收回</option>
+                            <option value="资产抵债">资产抵债</option>
+                            <option value="担保代偿">担保代偿</option>
+                            <option value="核销处理">核销处理</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="disposal_date" class="form-label fw-bold">
+                            <i class="bi bi-calendar me-1"></i>处置日期
+                        </label>
+                        <input type="date" class="form-control" id="disposal_date" name="disposal_date">
+                    </div>
+                    <div class="mb-3">
+                        <label for="disposal_amount" class="form-label fw-bold">
+                            <i class="bi bi-cash-coin me-1"></i>处置金额（两）
+                        </label>
+                        <input type="number" class="form-control" id="disposal_amount" name="disposal_amount"
+                               step="0.01" min="0">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-qz"><i class="bi bi-save me-1"></i>更新状态</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.getElementById('reminderModal').addEventListener('show.bs.modal', function (event) {
+    var btn = event.relatedTarget;
+    document.getElementById('reminder_loan_id').value = btn.dataset.loanId;
+    document.getElementById('reminder_loan_info').value = btn.dataset.loanNo + ' - ' + btn.dataset.loanCustomer;
+});
+
+document.getElementById('recoveryModal').addEventListener('show.bs.modal', function (event) {
+    var btn = event.relatedTarget;
+    document.getElementById('recovery_loan_id').value = btn.dataset.loanId;
+    document.getElementById('recovery_loan_info').value = btn.dataset.loanNo + ' - ' + btn.dataset.loanCustomer;
+});
+
+document.getElementById('badDebtModal').addEventListener('show.bs.modal', function (event) {
+    var btn = event.relatedTarget;
+    document.getElementById('baddebt_loan_id').value = btn.dataset.loanId;
+    document.getElementById('baddebt_loan_info').value = btn.dataset.loanNo + ' - ' + btn.dataset.loanCustomer;
+});
+
+document.getElementById('reminderStatusModal').addEventListener('show.bs.modal', function (event) {
+    var btn = event.relatedTarget;
+    document.getElementById('reminderStatusForm').action = '/collections/reminder/' + btn.dataset.reminderId + '/status';
+    document.getElementById('reminder_status').value = btn.dataset.reminderStatus;
+});
+
+document.getElementById('badDebtStatusModal').addEventListener('show.bs.modal', function (event) {
+    var btn = event.relatedTarget;
+    document.getElementById('badDebtStatusForm').action = '/collections/bad-debt/' + btn.dataset.bdId + '/status';
+    document.getElementById('bd_status').value = btn.dataset.bdStatus;
+});
+</script>
+{% endblock %}

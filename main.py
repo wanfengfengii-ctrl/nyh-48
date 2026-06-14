@@ -247,6 +247,12 @@ def dashboard(request: Request, user=Depends(auth_dep)):
     pending_review = cursor.fetchone()["cnt"]
     cursor.execute("SELECT COUNT(*) as cnt FROM clearings WHERE status = '待清算'")
     pending_clearing = cursor.fetchone()["cnt"]
+    cursor.execute("SELECT COUNT(*) as cnt FROM finance_loans WHERE status = '待审核'")
+    pending_finance = cursor.fetchone()["cnt"]
+    cursor.execute("SELECT COUNT(*) as cnt FROM finance_loans WHERE status = '已逾期'")
+    overdue_finance = cursor.fetchone()["cnt"]
+    cursor.execute("SELECT COUNT(*) as cnt FROM finance_loans WHERE status IN ('已放款', '还款中', '已逾期')")
+    active_finance = cursor.fetchone()["cnt"]
     cursor.execute(
         "SELECT b.*, u.real_name as issuer_name, br.branch_name as issue_branch_name FROM bills b LEFT JOIN users u ON b.issuer_id = u.id LEFT JOIN branches br ON b.issue_branch_id = br.id ORDER BY b.id DESC LIMIT 10"
     )
@@ -289,6 +295,9 @@ def dashboard(request: Request, user=Depends(auth_dep)):
             "frozen_count": frozen_count,
             "pending_review": pending_review,
             "pending_clearing": pending_clearing,
+            "pending_finance": pending_finance,
+            "overdue_finance": overdue_finance,
+            "active_finance": active_finance,
             "recent_bills": recent_bills,
             "warnings": warnings,
         },
@@ -546,6 +555,13 @@ def bill_detail(request: Request, bill_id: int, user=Depends(auth_dep)):
     clearings = [dict(row) for row in cursor.fetchall()]
 
     current_payee = get_current_payee(bill_id, conn)
+
+    cursor.execute(
+        "SELECT fl.*, u1.real_name as applicant_name, u2.real_name as reviewer_name, u3.real_name as approver_name FROM finance_loans fl LEFT JOIN users u1 ON fl.applicant_id = u1.id LEFT JOIN users u2 ON fl.reviewer_id = u2.id LEFT JOIN users u3 ON fl.approver_id = u3.id WHERE fl.bill_id = ? ORDER BY fl.id DESC",
+        (bill_id,),
+    )
+    finance_loans = [dict(row) for row in cursor.fetchall()]
+
     conn.close()
 
     bill_dict["endorsements"] = endorsements
@@ -572,6 +588,7 @@ def bill_detail(request: Request, bill_id: int, user=Depends(auth_dep)):
             "exceptions": exceptions,
             "clearings": clearings,
             "current_payee": current_payee,
+            "finance_loans": finance_loans,
             "can_endorse": can_endorse,
             "can_redeem": can_redeem,
             "can_void": can_void,
@@ -1403,6 +1420,829 @@ async def search_submit(request: Request, user=Depends(auth_dep)):
     )
 
 
+@app.get("/finance/loans", response_class=HTMLResponse)
+def finance_loans_list(request: Request, status: Optional[str] = None, user=Depends(auth_dep)):
+    conn = get_db()
+    cursor = conn.cursor()
+    sql = """
+        SELECT fl.*, b.bill_no, b.amount as bill_amount,
+               u1.real_name as applicant_name, u2.real_name as reviewer_name, u3.real_name as approver_name,
+               br.branch_name
+        FROM finance_loans fl
+        LEFT JOIN bills b ON fl.bill_id = b.id
+        LEFT JOIN users u1 ON fl.applicant_id = u1.id
+        LEFT JOIN users u2 ON fl.reviewer_id = u2.id
+        LEFT JOIN users u3 ON fl.approver_id = u3.id
+        LEFT JOIN branches br ON fl.branch_id = br.id
+    """
+    params = []
+    if status and status in ('待审核', '已复核', '已放款', '还款中', '已结清', '已逾期', '已拒绝', '已取消'):
+        sql += " WHERE fl.status = ?"
+        params.append(status)
+    sql += " ORDER BY fl.id DESC"
+    cursor.execute(sql, params)
+    loans = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return templates.TemplateResponse(
+        "finance_loan_list.html",
+        {"request": request, "user": user, "loans": loans, "current_status": status},
+    )
+
+
+@app.get("/finance/loans/apply", response_class=HTMLResponse)
+def finance_loan_apply_page(request: Request, bill_id: Optional[int] = None, user=Depends(auth_dep)):
+    if user["role"] not in OPERATOR_ROLES:
+        raise HTTPException(status_code=403, detail="仅经办人或掌柜可申请押汇")
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM bills WHERE status = '有效' ORDER BY id DESC")
+    bills = [dict(row) for row in cursor.fetchall()]
+    cursor.execute("SELECT * FROM customer_credits WHERE status = '生效' ORDER BY id")
+    credits = [dict(row) for row in cursor.fetchall()]
+    cursor.execute("SELECT * FROM branches WHERE status = '营业中' ORDER BY id")
+    branches = [dict(row) for row in cursor.fetchall()]
+    selected_bill = None
+    if bill_id:
+        cursor.execute("SELECT * FROM bills WHERE id = ?", (bill_id,))
+        row = cursor.fetchone()
+        if row:
+            selected_bill = dict(row)
+    conn.close()
+    return templates.TemplateResponse(
+        "finance_loan_apply.html",
+        {"request": request, "user": user, "bills": bills, "credits": credits, "branches": branches, "selected_bill": selected_bill},
+    )
+
+
+@app.post("/finance/loans/apply")
+def finance_loan_apply_submit(
+    request: Request,
+    bill_id: int = Form(...),
+    customer_name: str = Form(...),
+    loan_amount: float = Form(...),
+    rate_annual: float = Form(...),
+    due_date: str = Form(...),
+    branch_id: str = Form(default=""),
+    remark: str = Form(default=""),
+    user=Depends(auth_dep),
+):
+    if user["role"] not in OPERATOR_ROLES:
+        raise HTTPException(status_code=403, detail="仅经办人或掌柜可申请押汇")
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM bills WHERE id = ?", (bill_id,))
+    bill = cursor.fetchone()
+    errors = []
+    if not bill:
+        errors.append("汇票不存在")
+    elif bill["status"] != "有效":
+        errors.append("仅有效汇票可申请押汇")
+    if loan_amount <= 0:
+        errors.append("融资金额必须大于零")
+    if bill and loan_amount > bill["amount"]:
+        errors.append(f"融资金额不能超过票面金额（{bill['amount']} 两）")
+    if rate_annual <= 0:
+        errors.append("年利率必须大于零")
+    cursor.execute(
+        "SELECT id FROM finance_loans WHERE bill_id = ? AND status NOT IN ('已结清', '已拒绝', '已取消')",
+        (bill_id,),
+    )
+    if cursor.fetchone():
+        errors.append("该汇票已有进行中的押汇融资申请")
+    cursor.execute(
+        "SELECT * FROM customer_credits WHERE customer_name = ? AND status = '生效'",
+        (customer_name,),
+    )
+    credit_row = cursor.fetchone()
+    if credit_row:
+        if credit_row["credit_limit"] > 0 and credit_row["used_limit"] + loan_amount > credit_row["credit_limit"]:
+            errors.append(f"客户授信额度不足（总额 {credit_row['credit_limit']} 两，已用 {credit_row['used_limit']} 两，本次 {loan_amount} 两）")
+    b_id = int(branch_id) if branch_id else user.get("branch_id")
+    if errors:
+        cursor.execute("SELECT * FROM bills WHERE status = '有效' ORDER BY id DESC")
+        bills_list = [dict(row) for row in cursor.fetchall()]
+        cursor.execute("SELECT * FROM customer_credits WHERE status = '生效' ORDER BY id")
+        credits_list = [dict(row) for row in cursor.fetchall()]
+        cursor.execute("SELECT * FROM branches WHERE status = '营业中' ORDER BY id")
+        branches = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return templates.TemplateResponse(
+            "finance_loan_apply.html",
+            {"request": request, "user": user, "bills": bills_list, "credits": credits_list, "branches": branches, "selected_bill": None, "errors": errors, "form": {
+                "bill_id": bill_id, "customer_name": customer_name, "loan_amount": loan_amount, "rate_annual": rate_annual, "due_date": due_date, "branch_id": branch_id, "remark": remark
+            }},
+        )
+    today = date.today().isoformat()
+    cursor.execute(
+        "INSERT INTO finance_loans (bill_id, customer_name, loan_amount, rate_annual, due_date, status, applicant_id, branch_id, remark, created_at) VALUES (?, ?, ?, ?, ?, '待审核', ?, ?, ?, ?)",
+        (bill_id, customer_name, loan_amount, rate_annual, due_date, user["id"], b_id, remark, today),
+    )
+    loan_id = cursor.lastrowid
+    add_timeline(bill_id, "押汇申请", user["real_name"], f"申请押汇融资 {loan_amount} 两，客户 {customer_name}，年利率 {rate_annual}%，到期 {due_date}", conn)
+    conn.commit()
+    conn.close()
+    return RedirectResponse(f"/finance/loans/{loan_id}", status_code=303)
+
+
+@app.get("/finance/loans/{loan_id}", response_class=HTMLResponse)
+def finance_loan_detail(request: Request, loan_id: int, user=Depends(auth_dep)):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        """SELECT fl.*, b.bill_no, b.amount as bill_amount, b.issue_date, b.due_date as bill_due_date,
+                  u1.real_name as applicant_name, u2.real_name as reviewer_name, u3.real_name as approver_name,
+                  br.branch_name
+           FROM finance_loans fl
+           LEFT JOIN bills b ON fl.bill_id = b.id
+           LEFT JOIN users u1 ON fl.applicant_id = u1.id
+           LEFT JOIN users u2 ON fl.reviewer_id = u2.id
+           LEFT JOIN users u3 ON fl.approver_id = u3.id
+           LEFT JOIN branches br ON fl.branch_id = br.id
+           WHERE fl.id = ?""",
+        (loan_id,),
+    )
+    loan = cursor.fetchone()
+    if not loan:
+        conn.close()
+        raise HTTPException(status_code=404, detail="押汇融资记录不存在")
+    loan_dict = dict(loan)
+    cursor.execute(
+        "SELECT ia.*, u.real_name as operator_name FROM interest_accruals ia LEFT JOIN users u ON ia.operator_id = u.id WHERE ia.loan_id = ? ORDER BY ia.id",
+        (loan_id,),
+    )
+    accruals = [dict(row) for row in cursor.fetchall()]
+    cursor.execute(
+        "SELECT cr.*, u.real_name as operator_name FROM collection_reminders cr LEFT JOIN users u ON cr.operator_id = u.id WHERE cr.loan_id = ? ORDER BY cr.id",
+        (loan_id,),
+    )
+    reminders = [dict(row) for row in cursor.fetchall()]
+    cursor.execute(
+        "SELECT orv.*, u.real_name as operator_name FROM overdue_recoveries orv LEFT JOIN users u ON orv.operator_id = u.id WHERE orv.loan_id = ? ORDER BY orv.id",
+        (loan_id,),
+    )
+    recoveries = [dict(row) for row in cursor.fetchall()]
+    cursor.execute(
+        "SELECT bd.*, u.real_name as operator_name FROM bad_debts bd LEFT JOIN users u ON bd.operator_id = u.id WHERE bd.loan_id = ? ORDER BY bd.id",
+        (loan_id,),
+    )
+    bad_debts = [dict(row) for row in cursor.fetchall()]
+    cursor.execute(
+        "SELECT * FROM timeline WHERE bill_id = ? ORDER BY id", (loan_dict["bill_id"],)
+    )
+    timeline = [dict(row) for row in cursor.fetchall()]
+    can_review = loan_dict["status"] == "待审核" and user["role"] in REVIEWER_ROLES
+    can_approve = loan_dict["status"] == "已复核" and user["role"] in MANAGER_ROLES
+    can_repay = loan_dict["status"] in ("已放款", "还款中") and user["role"] in OPERATOR_ROLES
+    can_mark_overdue = loan_dict["status"] in ("已放款", "还款中") and user["role"] in MANAGER_ROLES
+    can_settle = loan_dict["status"] in ("已放款", "还款中", "已逾期") and user["role"] in MANAGER_ROLES
+    can_accrue = loan_dict["status"] in ("已放款", "还款中", "已逾期") and user["role"] in OPERATOR_ROLES
+    can_remind = loan_dict["status"] in ("已放款", "还款中", "已逾期") and user["role"] in OPERATOR_ROLES
+    can_recover = loan_dict["status"] == "已逾期" and user["role"] in MANAGER_ROLES
+    can_bad_debt = loan_dict["status"] == "已逾期" and user["role"] in MANAGER_ROLES
+    conn.close()
+    loan_dict["accruals"] = accruals
+    loan_dict["reminders"] = reminders
+    loan_dict["recoveries"] = recoveries
+    loan_dict["bad_debts"] = bad_debts
+    return templates.TemplateResponse(
+        "finance_loan_detail.html",
+        {
+            "request": request, "user": user, "loan": loan_dict, "timeline": timeline,
+            "can_review": can_review, "can_approve": can_approve, "can_repay": can_repay,
+            "can_mark_overdue": can_mark_overdue, "can_settle": can_settle,
+            "can_accrue": can_accrue, "can_remind": can_remind,
+            "can_recover": can_recover, "can_bad_debt": can_bad_debt,
+        },
+    )
+
+
+@app.get("/finance/loans/{loan_id}/review", response_class=HTMLResponse)
+def finance_loan_review_page(request: Request, loan_id: int, user=Depends(auth_dep)):
+    if user["role"] not in REVIEWER_ROLES:
+        raise HTTPException(status_code=403, detail="仅复核人或掌柜可审核")
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        """SELECT fl.*, b.bill_no, b.amount as bill_amount, b.issue_date, b.due_date as bill_due_date,
+                  u1.real_name as applicant_name, br.branch_name
+           FROM finance_loans fl
+           LEFT JOIN bills b ON fl.bill_id = b.id
+           LEFT JOIN users u1 ON fl.applicant_id = u1.id
+           LEFT JOIN branches br ON fl.branch_id = br.id
+           WHERE fl.id = ?""",
+        (loan_id,),
+    )
+    loan = cursor.fetchone()
+    conn.close()
+    if not loan:
+        raise HTTPException(status_code=404, detail="押汇融资记录不存在")
+    if loan["status"] != "待审核":
+        raise HTTPException(status_code=400, detail="该申请已处理")
+    return templates.TemplateResponse(
+        "finance_loan_review.html",
+        {"request": request, "user": user, "loan": dict(loan)},
+    )
+
+
+@app.post("/finance/loans/{loan_id}/review")
+def finance_loan_review_submit(
+    request: Request,
+    loan_id: int,
+    action: str = Form(...),
+    review_comment: str = Form(default=""),
+    user=Depends(auth_dep),
+):
+    if user["role"] not in REVIEWER_ROLES:
+        raise HTTPException(status_code=403, detail="仅复核人或掌柜可审核")
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT fl.*, b.bill_no FROM finance_loans fl LEFT JOIN bills b ON fl.bill_id = b.id WHERE fl.id = ?",
+        (loan_id,),
+    )
+    loan = cursor.fetchone()
+    if not loan:
+        conn.close()
+        raise HTTPException(status_code=404, detail="押汇融资记录不存在")
+    if loan["status"] != "待审核":
+        conn.close()
+        raise HTTPException(status_code=400, detail="该申请已处理")
+    today = date.today().isoformat()
+    if action == "approve":
+        cursor.execute(
+            "UPDATE finance_loans SET status = '已复核', reviewer_id = ?, review_date = ?, review_comment = ? WHERE id = ?",
+            (user["id"], today, review_comment, loan_id),
+        )
+        add_timeline(loan["bill_id"], "押汇复核通过", user["real_name"], f"押汇融资复核通过，金额 {loan['loan_amount']} 两" + (f"，意见：{review_comment}" if review_comment else ""), conn)
+    else:
+        cursor.execute(
+            "UPDATE finance_loans SET status = '已拒绝', reviewer_id = ?, review_date = ?, review_comment = ? WHERE id = ?",
+            (user["id"], today, review_comment, loan_id),
+        )
+        add_timeline(loan["bill_id"], "押汇复核拒绝", user["real_name"], f"押汇融资复核拒绝，汇票 {loan['bill_no']}" + (f"，原因：{review_comment}" if review_comment else ""), conn)
+    conn.commit()
+    conn.close()
+    return RedirectResponse(f"/finance/loans/{loan_id}", status_code=303)
+
+
+@app.post("/finance/loans/{loan_id}/approve")
+def finance_loan_approve(
+    request: Request,
+    loan_id: int,
+    approve_comment: str = Form(default=""),
+    user=Depends(auth_dep),
+):
+    if user["role"] not in MANAGER_ROLES:
+        raise HTTPException(status_code=403, detail="仅掌柜可审批放款")
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT fl.*, b.bill_no FROM finance_loans fl LEFT JOIN bills b ON fl.bill_id = b.id WHERE fl.id = ?",
+        (loan_id,),
+    )
+    loan = cursor.fetchone()
+    if not loan:
+        conn.close()
+        raise HTTPException(status_code=404, detail="押汇融资记录不存在")
+    if loan["status"] != "已复核":
+        conn.close()
+        raise HTTPException(status_code=400, detail="仅已复核的申请可放款")
+    today = date.today().isoformat()
+    cursor.execute(
+        "UPDATE finance_loans SET status = '已放款', approver_id = ?, approve_date = ?, approve_comment = ?, loan_date = ? WHERE id = ?",
+        (user["id"], today, approve_comment, today, loan_id),
+    )
+    cursor.execute(
+        "UPDATE customer_credits SET used_limit = used_limit + ? WHERE customer_name = ? AND status = '生效'",
+        (loan["loan_amount"], loan["customer_name"]),
+    )
+    add_timeline(loan["bill_id"], "押汇放款", user["real_name"], f"押汇融资放款 {loan['loan_amount']} 两，客户 {loan['customer_name']}" + (f"，审批意见：{approve_comment}" if approve_comment else ""), conn)
+    conn.commit()
+    conn.close()
+    return RedirectResponse(f"/finance/loans/{loan_id}", status_code=303)
+
+
+@app.post("/finance/loans/{loan_id}/repay")
+def finance_loan_repay(
+    request: Request,
+    loan_id: int,
+    repay_principal: float = Form(...),
+    repay_interest: float = Form(default=0),
+    user=Depends(auth_dep),
+):
+    if user["role"] not in OPERATOR_ROLES:
+        raise HTTPException(status_code=403, detail="无权登记还款")
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM finance_loans WHERE id = ?", (loan_id,))
+    loan = cursor.fetchone()
+    if not loan:
+        conn.close()
+        raise HTTPException(status_code=404, detail="押汇融资记录不存在")
+    if loan["status"] not in ("已放款", "还款中"):
+        conn.close()
+        raise HTTPException(status_code=400, detail="当前状态不可还款")
+    new_paid = loan["paid_amount"] + repay_principal
+    new_interest = loan["interest_paid"] + repay_interest
+    new_status = "还款中"
+    if new_paid >= loan["loan_amount"]:
+        new_status = "已结清"
+        new_paid = loan["loan_amount"]
+        cursor.execute(
+            "UPDATE customer_credits SET used_limit = used_limit - ? WHERE customer_name = ? AND status = '生效'",
+            (loan["loan_amount"], loan["customer_name"]),
+        )
+    cursor.execute(
+        "UPDATE finance_loans SET paid_amount = ?, interest_paid = ?, status = ? WHERE id = ?",
+        (new_paid, new_interest, new_status, loan_id),
+    )
+    action_text = "押汇结清" if new_status == "已结清" else "押汇还款"
+    add_timeline(loan["bill_id"], action_text, user["real_name"], f"还款本金 {repay_principal} 两，利息 {repay_interest} 两" + ("，已全部结清" if new_status == "已结清" else ""), conn)
+    conn.commit()
+    conn.close()
+    return RedirectResponse(f"/finance/loans/{loan_id}", status_code=303)
+
+
+@app.post("/finance/loans/{loan_id}/overdue")
+def finance_loan_mark_overdue(request: Request, loan_id: int, user=Depends(auth_dep)):
+    if user["role"] not in MANAGER_ROLES:
+        raise HTTPException(status_code=403, detail="仅掌柜可标记逾期")
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM finance_loans WHERE id = ?", (loan_id,))
+    loan = cursor.fetchone()
+    if not loan:
+        conn.close()
+        raise HTTPException(status_code=404, detail="押汇融资记录不存在")
+    if loan["status"] not in ("已放款", "还款中"):
+        conn.close()
+        raise HTTPException(status_code=400, detail="当前状态不可标记逾期")
+    cursor.execute("UPDATE finance_loans SET status = '已逾期' WHERE id = ?", (loan_id,))
+    add_timeline(loan["bill_id"], "押汇逾期", user["real_name"], f"押汇融资标记逾期，剩余本金 {loan['loan_amount'] - loan['paid_amount']} 两", conn)
+    conn.commit()
+    conn.close()
+    return RedirectResponse(f"/finance/loans/{loan_id}", status_code=303)
+
+
+@app.post("/finance/loans/{loan_id}/settle")
+def finance_loan_settle(request: Request, loan_id: int, user=Depends(auth_dep)):
+    if user["role"] not in MANAGER_ROLES:
+        raise HTTPException(status_code=403, detail="仅掌柜可结清")
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM finance_loans WHERE id = ?", (loan_id,))
+    loan = cursor.fetchone()
+    if not loan:
+        conn.close()
+        raise HTTPException(status_code=404, detail="押汇融资记录不存在")
+    if loan["status"] not in ("已放款", "还款中", "已逾期"):
+        conn.close()
+        raise HTTPException(status_code=400, detail="当前状态不可结清")
+    cursor.execute(
+        "UPDATE finance_loans SET paid_amount = loan_amount, status = '已结清' WHERE id = ?",
+        (loan_id,),
+    )
+    cursor.execute(
+        "UPDATE customer_credits SET used_limit = used_limit - ? WHERE customer_name = ? AND status = '生效'",
+        (loan["loan_amount"], loan["customer_name"]),
+    )
+    add_timeline(loan["bill_id"], "押汇结清", user["real_name"], f"押汇融资强制结清，融资金额 {loan['loan_amount']} 两", conn)
+    conn.commit()
+    conn.close()
+    return RedirectResponse(f"/finance/loans/{loan_id}", status_code=303)
+
+
+@app.get("/customer-credits", response_class=HTMLResponse)
+def customer_credits_list(request: Request, user=Depends(auth_dep)):
+    if user["role"] not in ("总号掌柜", "分号掌柜", "稽核员"):
+        raise HTTPException(status_code=403, detail="仅掌柜或稽核员可查看客户授信")
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT cc.*, br.branch_name FROM customer_credits cc LEFT JOIN branches br ON cc.branch_id = br.id ORDER BY cc.id DESC"
+    )
+    credits = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return templates.TemplateResponse(
+        "customer_credit_list.html",
+        {"request": request, "user": user, "credits": credits},
+    )
+
+
+@app.get("/customer-credits/create", response_class=HTMLResponse)
+def customer_credit_create_page(request: Request, user=Depends(auth_dep)):
+    if user["role"] not in MANAGER_ROLES:
+        raise HTTPException(status_code=403, detail="仅掌柜可新增授信")
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM branches WHERE status = '营业中' ORDER BY id")
+    branches = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return templates.TemplateResponse(
+        "customer_credit_edit.html",
+        {"request": request, "user": user, "branches": branches, "credit": None},
+    )
+
+
+@app.post("/customer-credits/create")
+def customer_credit_create_submit(
+    request: Request,
+    customer_name: str = Form(...),
+    customer_type: str = Form(...),
+    credit_limit: float = Form(...),
+    rate_annual: float = Form(default=0),
+    branch_id: str = Form(default=""),
+    remark: str = Form(default=""),
+    user=Depends(auth_dep),
+):
+    if user["role"] not in MANAGER_ROLES:
+        raise HTTPException(status_code=403, detail="仅掌柜可新增授信")
+    conn = get_db()
+    cursor = conn.cursor()
+    today = date.today().isoformat()
+    b_id = int(branch_id) if branch_id else None
+    cursor.execute(
+        "INSERT INTO customer_credits (customer_name, customer_type, credit_limit, rate_annual, branch_id, remark, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (customer_name, customer_type, credit_limit, rate_annual, b_id, remark, today),
+    )
+    conn.commit()
+    conn.close()
+    return RedirectResponse("/customer-credits", status_code=303)
+
+
+@app.get("/customer-credits/{credit_id}/edit", response_class=HTMLResponse)
+def customer_credit_edit_page(request: Request, credit_id: int, user=Depends(auth_dep)):
+    if user["role"] not in MANAGER_ROLES:
+        raise HTTPException(status_code=403, detail="仅掌柜可编辑授信")
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM customer_credits WHERE id = ?", (credit_id,))
+    credit = cursor.fetchone()
+    cursor.execute("SELECT * FROM branches WHERE status = '营业中' ORDER BY id")
+    branches = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    if not credit:
+        raise HTTPException(status_code=404, detail="授信记录不存在")
+    return templates.TemplateResponse(
+        "customer_credit_edit.html",
+        {"request": request, "user": user, "branches": branches, "credit": dict(credit)},
+    )
+
+
+@app.post("/customer-credits/{credit_id}/edit")
+def customer_credit_edit_submit(
+    request: Request,
+    credit_id: int,
+    customer_name: str = Form(...),
+    customer_type: str = Form(...),
+    credit_limit: float = Form(...),
+    rate_annual: float = Form(default=0),
+    branch_id: str = Form(default=""),
+    status: str = Form(default="生效"),
+    remark: str = Form(default=""),
+    user=Depends(auth_dep),
+):
+    if user["role"] not in MANAGER_ROLES:
+        raise HTTPException(status_code=403, detail="仅掌柜可编辑授信")
+    conn = get_db()
+    cursor = conn.cursor()
+    today = date.today().isoformat()
+    b_id = int(branch_id) if branch_id else None
+    cursor.execute(
+        "UPDATE customer_credits SET customer_name = ?, customer_type = ?, credit_limit = ?, rate_annual = ?, branch_id = ?, status = ?, remark = ?, updated_at = ? WHERE id = ?",
+        (customer_name, customer_type, credit_limit, rate_annual, b_id, status, remark, today, credit_id),
+    )
+    conn.commit()
+    conn.close()
+    return RedirectResponse("/customer-credits", status_code=303)
+
+
+@app.get("/interest-accruals", response_class=HTMLResponse)
+def interest_accruals_list(request: Request, loan_id: Optional[int] = None, user=Depends(auth_dep)):
+    if user["role"] not in ALL_MANAGE_ROLES:
+        raise HTTPException(status_code=403, detail="无权查看利息计提")
+    conn = get_db()
+    cursor = conn.cursor()
+    sql = """
+        SELECT ia.*, fl.loan_amount, fl.customer_name, fl.rate_annual, b.bill_no, u.real_name as operator_name
+        FROM interest_accruals ia
+        LEFT JOIN finance_loans fl ON ia.loan_id = fl.id
+        LEFT JOIN bills b ON fl.bill_id = b.id
+        LEFT JOIN users u ON ia.operator_id = u.id
+    """
+    params = []
+    if loan_id:
+        sql += " WHERE ia.loan_id = ?"
+        params.append(loan_id)
+    sql += " ORDER BY ia.id DESC"
+    cursor.execute(sql, params)
+    accruals = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return templates.TemplateResponse(
+        "interest_accruals.html",
+        {"request": request, "user": user, "accruals": accruals},
+    )
+
+
+@app.post("/interest-accruals/create")
+def interest_accrual_create(
+    request: Request,
+    loan_id: int = Form(...),
+    period_start: str = Form(...),
+    period_end: str = Form(...),
+    user=Depends(auth_dep),
+):
+    if user["role"] not in OPERATOR_ROLES:
+        raise HTTPException(status_code=403, detail="无权计提利息")
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM finance_loans WHERE id = ?", (loan_id,))
+    loan = cursor.fetchone()
+    if not loan:
+        conn.close()
+        raise HTTPException(status_code=404, detail="融资记录不存在")
+    if loan["status"] not in ("已放款", "还款中", "已逾期"):
+        conn.close()
+        raise HTTPException(status_code=400, detail="该融资状态不可计提利息")
+    start = date.fromisoformat(period_start)
+    end = date.fromisoformat(period_end)
+    days = (end - start).days
+    if days <= 0:
+        conn.close()
+        raise HTTPException(status_code=400, detail="计提天数必须大于零")
+    principal = loan["loan_amount"] - loan["paid_amount"]
+    rate_daily = loan["rate_annual"] / 100 / 360
+    interest_amount = round(principal * rate_daily * days, 2)
+    today = date.today().isoformat()
+    cursor.execute(
+        "INSERT INTO interest_accruals (loan_id, period_start, period_end, days, principal, rate_daily, interest_amount, status, operator_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, '待计提', ?, ?)",
+        (loan_id, period_start, period_end, days, principal, rate_daily, interest_amount, user["id"], today),
+    )
+    add_timeline(loan["bill_id"], "利息计提", user["real_name"], f"计提利息 {interest_amount} 两，期间 {period_start} 至 {period_end}，计 {days} 日", conn)
+    conn.commit()
+    conn.close()
+    return RedirectResponse("/interest-accruals", status_code=303)
+
+
+@app.post("/interest-accruals/{accrual_id}/confirm")
+def interest_accrual_confirm(request: Request, accrual_id: int, user=Depends(auth_dep)):
+    if user["role"] not in REVIEWER_ROLES:
+        raise HTTPException(status_code=403, detail="仅复核人或掌柜可确认计提")
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM interest_accruals WHERE id = ?", (accrual_id,))
+    accrual = cursor.fetchone()
+    if not accrual:
+        conn.close()
+        raise HTTPException(status_code=404, detail="计提记录不存在")
+    if accrual["status"] != "待计提":
+        conn.close()
+        raise HTTPException(status_code=400, detail="仅待计提记录可确认")
+    cursor.execute("UPDATE interest_accruals SET status = '已计提' WHERE id = ?", (accrual_id,))
+    conn.commit()
+    conn.close()
+    return RedirectResponse("/interest-accruals", status_code=303)
+
+
+@app.post("/interest-accruals/{accrual_id}/collect")
+def interest_accrual_collect(request: Request, accrual_id: int, user=Depends(auth_dep)):
+    if user["role"] not in MANAGER_ROLES:
+        raise HTTPException(status_code=403, detail="仅掌柜可收取利息")
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT ia.*, fl.bill_id FROM interest_accruals ia LEFT JOIN finance_loans fl ON ia.loan_id = fl.id WHERE ia.id = ?", (accrual_id,))
+    accrual = cursor.fetchone()
+    if not accrual:
+        conn.close()
+        raise HTTPException(status_code=404, detail="计提记录不存在")
+    if accrual["status"] != "已计提":
+        conn.close()
+        raise HTTPException(status_code=400, detail="仅已计提记录可收取")
+    cursor.execute("UPDATE interest_accruals SET status = '已收取' WHERE id = ?", (accrual_id,))
+    cursor.execute(
+        "UPDATE finance_loans SET interest_paid = interest_paid + ? WHERE id = ?",
+        (accrual["interest_amount"], accrual["loan_id"]),
+    )
+    add_timeline(accrual["bill_id"], "利息收取", user["real_name"], f"收取利息 {accrual['interest_amount']} 两", conn)
+    conn.commit()
+    conn.close()
+    return RedirectResponse("/interest-accruals", status_code=303)
+
+
+@app.get("/collections", response_class=HTMLResponse)
+def collections_page(request: Request, user=Depends(auth_dep)):
+    if user["role"] not in ALL_MANAGE_ROLES:
+        raise HTTPException(status_code=403, detail="无权查看催收管理")
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        """SELECT fl.*, b.bill_no, u1.real_name as applicant_name, br.branch_name
+           FROM finance_loans fl
+           LEFT JOIN bills b ON fl.bill_id = b.id
+           LEFT JOIN users u1 ON fl.applicant_id = u1.id
+           LEFT JOIN branches br ON fl.branch_id = br.id
+           WHERE fl.status IN ('已放款', '还款中', '已逾期')
+           ORDER BY CASE WHEN fl.status = '已逾期' THEN 0 ELSE 1 END, fl.due_date ASC"""
+    )
+    active_loans = [dict(row) for row in cursor.fetchall()]
+    cursor.execute(
+        """SELECT cr.*, fl.customer_name, b.bill_no, u.real_name as operator_name
+           FROM collection_reminders cr
+           LEFT JOIN finance_loans fl ON cr.loan_id = fl.id
+           LEFT JOIN bills b ON fl.bill_id = b.id
+           LEFT JOIN users u ON cr.operator_id = u.id
+           ORDER BY cr.id DESC LIMIT 100"""
+    )
+    reminders = [dict(row) for row in cursor.fetchall()]
+    cursor.execute(
+        """SELECT orv.*, fl.customer_name, b.bill_no, u.real_name as operator_name
+           FROM overdue_recoveries orv
+           LEFT JOIN finance_loans fl ON orv.loan_id = fl.id
+           LEFT JOIN bills b ON fl.bill_id = b.id
+           LEFT JOIN users u ON orv.operator_id = u.id
+           ORDER BY orv.id DESC LIMIT 100"""
+    )
+    recoveries = [dict(row) for row in cursor.fetchall()]
+    cursor.execute(
+        """SELECT bd.*, fl.customer_name, b.bill_no, u.real_name as operator_name
+           FROM bad_debts bd
+           LEFT JOIN finance_loans fl ON bd.loan_id = fl.id
+           LEFT JOIN bills b ON fl.bill_id = b.id
+           LEFT JOIN users u ON bd.operator_id = u.id
+           ORDER BY bd.id DESC LIMIT 100"""
+    )
+    bad_debts = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return templates.TemplateResponse(
+        "collections.html",
+        {"request": request, "user": user, "active_loans": active_loans, "reminders": reminders, "recoveries": recoveries, "bad_debts": bad_debts},
+    )
+
+
+@app.post("/collections/reminder")
+def collection_reminder_create(
+    request: Request,
+    loan_id: int = Form(...),
+    reminder_type: str = Form(...),
+    reminder_date: str = Form(...),
+    content: str = Form(...),
+    user=Depends(auth_dep),
+):
+    if user["role"] not in OPERATOR_ROLES:
+        raise HTTPException(status_code=403, detail="无权登记催收提醒")
+    conn = get_db()
+    cursor = conn.cursor()
+    today = date.today().isoformat()
+    cursor.execute(
+        "INSERT INTO collection_reminders (loan_id, reminder_type, reminder_date, content, operator_id, status, created_at) VALUES (?, ?, ?, ?, ?, '待处理', ?)",
+        (loan_id, reminder_type, reminder_date, content, user["id"], today),
+    )
+    cursor.execute("SELECT fl.*, b.bill_no FROM finance_loans fl LEFT JOIN bills b ON fl.bill_id = b.id WHERE fl.id = ?", (loan_id,))
+    loan = cursor.fetchone()
+    if loan:
+        add_timeline(loan["bill_id"], f"催收-{reminder_type}", user["real_name"], content, conn)
+    conn.commit()
+    conn.close()
+    return RedirectResponse("/collections", status_code=303)
+
+
+@app.post("/collections/reminder/{reminder_id}/status")
+def collection_reminder_update_status(
+    request: Request,
+    reminder_id: int,
+    status: str = Form(...),
+    response: str = Form(default=""),
+    user=Depends(auth_dep),
+):
+    if user["role"] not in OPERATOR_ROLES:
+        raise HTTPException(status_code=403, detail="无权更新催收状态")
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE collection_reminders SET status = ?, response = ? WHERE id = ?", (status, response, reminder_id))
+    conn.commit()
+    conn.close()
+    return RedirectResponse("/collections", status_code=303)
+
+
+@app.post("/collections/recovery")
+def overdue_recovery_create(
+    request: Request,
+    loan_id: int = Form(...),
+    recovery_type: str = Form(...),
+    recovery_amount: float = Form(...),
+    recovery_date: str = Form(...),
+    remark: str = Form(default=""),
+    user=Depends(auth_dep),
+):
+    if user["role"] not in MANAGER_ROLES:
+        raise HTTPException(status_code=403, detail="仅掌柜可登记追偿")
+    conn = get_db()
+    cursor = conn.cursor()
+    today = date.today().isoformat()
+    cursor.execute(
+        "INSERT INTO overdue_recoveries (loan_id, recovery_type, recovery_amount, recovery_date, operator_id, status, remark, created_at) VALUES (?, ?, ?, ?, ?, '进行中', ?, ?)",
+        (loan_id, recovery_type, recovery_amount, recovery_date, user["id"], remark, today),
+    )
+    cursor.execute("SELECT fl.*, b.bill_no FROM finance_loans fl LEFT JOIN bills b ON fl.bill_id = b.id WHERE fl.id = ?", (loan_id,))
+    loan = cursor.fetchone()
+    if loan:
+        new_paid = loan["paid_amount"] + recovery_amount
+        if new_paid >= loan["loan_amount"]:
+            cursor.execute("UPDATE finance_loans SET paid_amount = loan_amount, status = '已结清' WHERE id = ?", (loan_id,))
+            cursor.execute(
+                "UPDATE customer_credits SET used_limit = used_limit - ? WHERE customer_name = ? AND status = '生效'",
+                (loan["loan_amount"], loan["customer_name"]),
+            )
+            add_timeline(loan["bill_id"], "追偿结清", user["real_name"], f"追偿还款 {recovery_amount} 两，融资已结清，方式：{recovery_type}", conn)
+        else:
+            cursor.execute("UPDATE finance_loans SET paid_amount = ? WHERE id = ?", (new_paid, loan_id))
+            add_timeline(loan["bill_id"], "追偿还款", user["real_name"], f"追偿还款 {recovery_amount} 两，方式：{recovery_type}", conn)
+    conn.commit()
+    conn.close()
+    return RedirectResponse("/collections", status_code=303)
+
+
+@app.post("/collections/recovery/{recovery_id}/status")
+def overdue_recovery_update_status(
+    request: Request,
+    recovery_id: int,
+    status: str = Form(...),
+    user=Depends(auth_dep),
+):
+    if user["role"] not in MANAGER_ROLES:
+        raise HTTPException(status_code=403, detail="仅掌柜可更新追偿状态")
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE overdue_recoveries SET status = ? WHERE id = ?", (status, recovery_id))
+    conn.commit()
+    conn.close()
+    return RedirectResponse("/collections", status_code=303)
+
+
+@app.post("/collections/bad-debt")
+def bad_debt_create(
+    request: Request,
+    loan_id: int = Form(...),
+    principal_remaining: float = Form(...),
+    interest_remaining: float = Form(default=0),
+    provision_amount: float = Form(default=0),
+    provision_ratio: float = Form(default=0),
+    bad_debt_date: str = Form(...),
+    remark: str = Form(default=""),
+    user=Depends(auth_dep),
+):
+    if user["role"] not in MANAGER_ROLES:
+        raise HTTPException(status_code=403, detail="仅掌柜可登记坏账")
+    conn = get_db()
+    cursor = conn.cursor()
+    today = date.today().isoformat()
+    cursor.execute(
+        "INSERT INTO bad_debts (loan_id, principal_remaining, interest_remaining, provision_amount, provision_ratio, bad_debt_date, operator_id, status, remark, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, '已登记', ?, ?)",
+        (loan_id, principal_remaining, interest_remaining, provision_amount, provision_ratio, bad_debt_date, user["id"], remark, today),
+    )
+    cursor.execute("SELECT fl.*, b.bill_no FROM finance_loans fl LEFT JOIN bills b ON fl.bill_id = b.id WHERE fl.id = ?", (loan_id,))
+    loan = cursor.fetchone()
+    if loan:
+        add_timeline(loan["bill_id"], "坏账登记", user["real_name"], f"坏账登记，剩余本金 {principal_remaining} 两，剩余利息 {interest_remaining} 两", conn)
+    conn.commit()
+    conn.close()
+    return RedirectResponse("/collections", status_code=303)
+
+
+@app.post("/collections/bad-debt/{bad_debt_id}/status")
+def bad_debt_update_status(
+    request: Request,
+    bad_debt_id: int,
+    status: str = Form(...),
+    disposal_type: str = Form(default=""),
+    disposal_date: str = Form(default=""),
+    disposal_amount: float = Form(default=0),
+    user=Depends(auth_dep),
+):
+    if user["role"] != "总号掌柜":
+        raise HTTPException(status_code=403, detail="仅总号掌柜可处置坏账")
+    conn = get_db()
+    cursor = conn.cursor()
+    if status in ("已计提准备", "已处置", "已核销"):
+        cursor.execute(
+            "UPDATE bad_debts SET status = ?, disposal_type = ?, disposal_date = ?, disposal_amount = ? WHERE id = ?",
+            (status, disposal_type or None, disposal_date or None, disposal_amount, bad_debt_id),
+        )
+        if status == "已核销":
+            cursor.execute("SELECT bd.*, fl.bill_id, fl.customer_name, fl.loan_amount FROM bad_debts bd LEFT JOIN finance_loans fl ON bd.loan_id = fl.id WHERE bd.id = ?", (bad_debt_id,))
+            bd = cursor.fetchone()
+            if bd:
+                cursor.execute("UPDATE finance_loans SET status = '已结清', paid_amount = loan_amount WHERE id = ?", (bd["loan_id"],))
+                cursor.execute(
+                    "UPDATE customer_credits SET used_limit = used_limit - ? WHERE customer_name = ? AND status = '生效'",
+                    (bd["loan_amount"], bd["customer_name"]),
+                )
+                add_timeline(bd["bill_id"], "坏账核销", user["real_name"], f"坏账核销，核销金额 {bd['principal_remaining']} 两", conn)
+    conn.commit()
+    conn.close()
+    return RedirectResponse("/collections", status_code=303)
+
+
 @app.get("/reports", response_class=HTMLResponse)
 def reports_page(request: Request, user=Depends(auth_dep)):
     if user["role"] not in ALL_MANAGE_ROLES:
@@ -1428,54 +2268,119 @@ def reports_generate(
     cursor = conn.cursor()
 
     report_data = {
-        "type": "日" if report_type == "daily" else "月",
+        "type": "日" if report_type == "daily" else ("月" if report_type == "monthly" else ("融资" if report_type == "finance" else "催收")),
         "start_date": start_date,
         "end_date": end_date,
     }
 
-    cursor.execute(
-        "SELECT COUNT(*) as cnt, COALESCE(SUM(amount), 0) as total FROM bills WHERE issue_date BETWEEN ? AND ? AND status != '已作废'",
-        (start_date, end_date),
-    )
-    issue_row = cursor.fetchone()
-    report_data["issue_count"] = issue_row["cnt"]
-    report_data["issue_total"] = issue_row["total"]
+    if report_type in ("daily", "monthly"):
+        cursor.execute(
+            "SELECT COUNT(*) as cnt, COALESCE(SUM(amount), 0) as total FROM bills WHERE issue_date BETWEEN ? AND ? AND status != '已作废'",
+            (start_date, end_date),
+        )
+        issue_row = cursor.fetchone()
+        report_data["issue_count"] = issue_row["cnt"]
+        report_data["issue_total"] = issue_row["total"]
 
-    cursor.execute(
-        "SELECT COUNT(*) as cnt, COALESCE(SUM(amount), 0) as total FROM redemptions WHERE request_date BETWEEN ? AND ? AND status = '已完成'",
-        (start_date, end_date),
-    )
-    redeem_row = cursor.fetchone()
-    report_data["redeem_count"] = redeem_row["cnt"]
-    report_data["redeem_total"] = redeem_row["total"]
+        cursor.execute(
+            "SELECT COUNT(*) as cnt, COALESCE(SUM(amount), 0) as total FROM redemptions WHERE request_date BETWEEN ? AND ? AND status = '已完成'",
+            (start_date, end_date),
+        )
+        redeem_row = cursor.fetchone()
+        report_data["redeem_count"] = redeem_row["cnt"]
+        report_data["redeem_total"] = redeem_row["total"]
 
-    cursor.execute(
-        "SELECT COUNT(*) as cnt FROM bills WHERE status = '有效'"
-    )
-    report_data["active_count"] = cursor.fetchone()["cnt"]
+        cursor.execute(
+            "SELECT COUNT(*) as cnt FROM bills WHERE status = '有效'"
+        )
+        report_data["active_count"] = cursor.fetchone()["cnt"]
 
-    cursor.execute(
-        "SELECT COUNT(*) as cnt FROM bills WHERE status IN ('挂失', '冻结')"
-    )
-    report_data["exception_count"] = cursor.fetchone()["cnt"]
+        cursor.execute(
+            "SELECT COUNT(*) as cnt FROM bills WHERE status IN ('挂失', '冻结')"
+        )
+        report_data["exception_count"] = cursor.fetchone()["cnt"]
 
-    cursor.execute(
-        "SELECT br.branch_name, COUNT(b.id) as cnt, COALESCE(SUM(b.amount), 0) as total FROM bills b LEFT JOIN branches br ON b.issue_branch_id = br.id WHERE b.issue_date BETWEEN ? AND ? AND b.status != '已作废' GROUP BY b.issue_branch_id ORDER BY total DESC",
-        (start_date, end_date),
-    )
-    report_data["branch_stats"] = [dict(row) for row in cursor.fetchall()]
+        cursor.execute(
+            "SELECT br.branch_name, COUNT(b.id) as cnt, COALESCE(SUM(b.amount), 0) as total FROM bills b LEFT JOIN branches br ON b.issue_branch_id = br.id WHERE b.issue_date BETWEEN ? AND ? AND b.status != '已作废' GROUP BY b.issue_branch_id ORDER BY total DESC",
+            (start_date, end_date),
+        )
+        report_data["branch_stats"] = [dict(row) for row in cursor.fetchall()]
 
-    cursor.execute(
-        "SELECT u.real_name, COUNT(b.id) as cnt, COALESCE(SUM(b.amount), 0) as total FROM bills b LEFT JOIN users u ON b.issuer_id = u.id WHERE b.issue_date BETWEEN ? AND ? AND b.status != '已作废' GROUP BY b.issuer_id ORDER BY total DESC",
-        (start_date, end_date),
-    )
-    report_data["operator_stats"] = [dict(row) for row in cursor.fetchall()]
+        cursor.execute(
+            "SELECT u.real_name, COUNT(b.id) as cnt, COALESCE(SUM(b.amount), 0) as total FROM bills b LEFT JOIN users u ON b.issuer_id = u.id WHERE b.issue_date BETWEEN ? AND ? AND b.status != '已作废' GROUP BY b.issuer_id ORDER BY total DESC",
+            (start_date, end_date),
+        )
+        report_data["operator_stats"] = [dict(row) for row in cursor.fetchall()]
 
-    cursor.execute(
-        "SELECT COALESCE(SUM(amount), 0) as total FROM clearings WHERE clearing_date BETWEEN ? AND ? AND status IN ('已清算', '已对账')",
-        (start_date, end_date),
-    )
-    report_data["clearing_total"] = cursor.fetchone()["total"]
+        cursor.execute(
+            "SELECT COALESCE(SUM(amount), 0) as total FROM clearings WHERE clearing_date BETWEEN ? AND ? AND status IN ('已清算', '已对账')",
+            (start_date, end_date),
+        )
+        report_data["clearing_total"] = cursor.fetchone()["total"]
+
+    elif report_type == "finance":
+        cursor.execute(
+            "SELECT COUNT(*) as cnt, COALESCE(SUM(loan_amount), 0) as total, COALESCE(SUM(paid_amount), 0) as paid FROM finance_loans WHERE created_at BETWEEN ? AND ?",
+            (start_date, end_date),
+        )
+        fin_row = cursor.fetchone()
+        report_data["total_loans"] = fin_row["cnt"]
+        report_data["total_loan_amount"] = fin_row["total"]
+        report_data["total_paid"] = fin_row["paid"]
+        cursor.execute(
+            "SELECT COUNT(*) as cnt FROM finance_loans WHERE status = '已逾期' AND created_at BETWEEN ? AND ?",
+            (start_date, end_date),
+        )
+        report_data["overdue_count"] = cursor.fetchone()["cnt"]
+        cursor.execute(
+            "SELECT customer_name, COUNT(*) as cnt, COALESCE(SUM(loan_amount), 0) as total_amount, COALESCE(SUM(paid_amount), 0) as total_paid FROM finance_loans WHERE created_at BETWEEN ? AND ? GROUP BY customer_name ORDER BY total_amount DESC",
+            (start_date, end_date),
+        )
+        report_data["customer_stats"] = [dict(row) for row in cursor.fetchall()]
+        cursor.execute(
+            "SELECT COALESCE(SUM(interest_amount), 0) as total_accrued FROM interest_accruals WHERE created_at BETWEEN ? AND ?",
+            (start_date, end_date),
+        )
+        total_accrued = cursor.fetchone()["total_accrued"]
+        cursor.execute(
+            "SELECT COALESCE(SUM(interest_amount), 0) as total_collected FROM interest_accruals WHERE status = '已收取' AND created_at BETWEEN ? AND ?",
+            (start_date, end_date),
+        )
+        total_collected = cursor.fetchone()["total_collected"]
+        report_data["interest_summary"] = {"total_accrued": total_accrued, "total_collected": total_collected}
+
+    elif report_type == "collection":
+        cursor.execute(
+            "SELECT COUNT(*) as cnt FROM collection_reminders WHERE reminder_date BETWEEN ? AND ?",
+            (start_date, end_date),
+        )
+        report_data["reminder_count"] = cursor.fetchone()["cnt"]
+        cursor.execute(
+            "SELECT COUNT(*) as cnt FROM finance_loans WHERE status = '已逾期' AND created_at BETWEEN ? AND ?",
+            (start_date, end_date),
+        )
+        report_data["overdue_loan_count"] = cursor.fetchone()["cnt"]
+        cursor.execute(
+            "SELECT COUNT(*) as cnt FROM overdue_recoveries WHERE recovery_date BETWEEN ? AND ?",
+            (start_date, end_date),
+        )
+        report_data["recovery_count"] = cursor.fetchone()["cnt"]
+        cursor.execute(
+            "SELECT COUNT(*) as cnt FROM bad_debts WHERE bad_debt_date BETWEEN ? AND ?",
+            (start_date, end_date),
+        )
+        report_data["bad_debt_count"] = cursor.fetchone()["cnt"]
+        cursor.execute(
+            "SELECT recovery_type, COUNT(*) as cnt, COALESCE(SUM(recovery_amount), 0) as total_amount FROM overdue_recoveries WHERE recovery_date BETWEEN ? AND ? GROUP BY recovery_type ORDER BY total_amount DESC",
+            (start_date, end_date),
+        )
+        report_data["recovery_stats"] = [dict(row) for row in cursor.fetchall()]
+        cursor.execute(
+            "SELECT COALESCE(SUM(principal_remaining), 0) as total_principal, COALESCE(SUM(provision_amount), 0) as total_provision, COALESCE(SUM(disposal_amount), 0) as total_disposal FROM bad_debts WHERE bad_debt_date BETWEEN ? AND ?",
+            (start_date, end_date),
+        )
+        bd_row = cursor.fetchone()
+        report_data["bad_debt_summary"] = {"total_principal": bd_row["total_principal"], "total_provision": bd_row["total_provision"], "total_disposal": bd_row["total_disposal"]}
 
     conn.close()
     return templates.TemplateResponse(

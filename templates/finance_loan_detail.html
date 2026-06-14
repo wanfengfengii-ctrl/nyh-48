@@ -1,0 +1,526 @@
+{% extends "base.html" %}
+
+{% block title %}押汇融资详情 - 传统钱庄汇票协同清算与额度风控系统{% endblock %}
+
+{% block extra_css %}
+<style>
+    .badge-pending { background-color: #fd7e14; }
+    .badge-info { background-color: #0dcaf0; color: #000; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="mb-3">
+    <a href="/finance/loans" class="text-decoration-none" style="color: var(--qz-secondary);">
+        <i class="bi bi-arrow-left me-1"></i>返回押汇列表
+    </a>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-8">
+        <div class="card card-qz mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-cash-coin me-2"></i>押汇融资 {{ loan.bill_no }}</span>
+                {% if loan.status == '待审核' %}
+                <span class="badge badge-pending fs-6">待审核</span>
+                {% elif loan.status == '已复核' %}
+                <span class="badge badge-info fs-6">已复核</span>
+                {% elif loan.status == '已放款' %}
+                <span class="badge badge-valid fs-6">已放款</span>
+                {% elif loan.status == '还款中' %}
+                <span class="badge badge-settled fs-6">还款中</span>
+                {% elif loan.status == '已结清' %}
+                <span class="badge badge-approved fs-6">已结清</span>
+                {% elif loan.status == '已逾期' %}
+                <span class="badge badge-lost fs-6">已逾期</span>
+                {% elif loan.status == '已拒绝' %}
+                <span class="badge badge-rejected fs-6">已拒绝</span>
+                {% elif loan.status == '已取消' %}
+                <span class="badge badge-voided fs-6">已取消</span>
+                {% endif %}
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4">
+                        <strong style="color: var(--qz-secondary);">票号</strong>
+                        <div>{{ loan.bill_no }}</div>
+                    </div>
+                    <div class="col-md-4">
+                        <strong style="color: var(--qz-secondary);">客户</strong>
+                        <div>{{ loan.customer_name }}</div>
+                    </div>
+                    <div class="col-md-4">
+                        <strong style="color: var(--qz-secondary);">融资金额</strong>
+                        <div class="fw-bold" style="color: var(--qz-primary);">{{ loan.loan_amount }} 两</div>
+                    </div>
+                </div>
+                <hr>
+                <div class="row">
+                    <div class="col-md-4">
+                        <strong style="color: var(--qz-secondary);">年利率</strong>
+                        <div>{{ loan.rate_annual }}％</div>
+                    </div>
+                    <div class="col-md-4">
+                        <strong style="color: var(--qz-secondary);">到期日</strong>
+                        <div>{{ loan.due_date }}</div>
+                    </div>
+                    <div class="col-md-4">
+                        <strong style="color: var(--qz-secondary);">经办人</strong>
+                        <div>{{ loan.applicant_name }}</div>
+                    </div>
+                </div>
+                <hr>
+                <div class="row">
+                    <div class="col-md-4">
+                        <strong style="color: var(--qz-secondary);">分号</strong>
+                        <div>{{ loan.branch_name or '—' }}</div>
+                    </div>
+                    <div class="col-md-4">
+                        <strong style="color: var(--qz-secondary);">备注</strong>
+                        <div>{{ loan.remark or '无' }}</div>
+                    </div>
+                </div>
+
+                {% if loan.status in ('已放款', '还款中', '已逾期') %}
+                <hr>
+                <h6 class="fw-bold mb-3" style="color: var(--qz-secondary);">
+                    <i class="bi bi-graph-up me-1"></i>还款进度
+                </h6>
+                <div class="mb-2 d-flex justify-content-between">
+                    <span>已还本金 / 融资总额</span>
+                    <span class="fw-bold" style="color: var(--qz-primary);">{{ loan.repaid_principal|default(0) }} / {{ loan.loan_amount }} 两</span>
+                </div>
+                <div class="progress mb-2" style="height: 20px;">
+                    {% set repay_pct = ((loan.repaid_principal|default(0) / loan.loan_amount) * 100)|int if loan.loan_amount else 0 %}
+                    <div class="progress-bar" role="progressbar"
+                         style="width: {{ repay_pct }}%; background: linear-gradient(135deg, var(--qz-primary), var(--qz-secondary));"
+                         aria-valuenow="{{ repay_pct }}" aria-valuemin="0" aria-valuemax="100">
+                        {{ repay_pct }}%
+                    </div>
+                </div>
+                <div class="text-muted" style="font-size: 0.9rem;">
+                    <i class="bi bi-cash me-1"></i>已收利息：<strong style="color: var(--qz-accent);">{{ loan.repaid_interest|default(0) }} 两</strong>
+                </div>
+                {% endif %}
+
+                <div class="mt-3 d-flex flex-wrap gap-2">
+                    {% if can_review %}
+                    <a href="/finance/loans/{{ loan.id }}/review" class="btn btn-qz">
+                        <i class="bi bi-check2-square me-1"></i>复核
+                    </a>
+                    {% endif %}
+                    {% if can_approve %}
+                    <form method="post" action="/finance/loans/{{ loan.id }}/approve" class="d-inline"
+                          onsubmit="return confirm('确认放款？');">
+                        <div class="input-group input-group-sm" style="width: auto;">
+                            <input type="text" class="form-control" name="approve_comment"
+                                   placeholder="放款备注（可选）" style="max-width: 200px;">
+                            <button type="submit" class="btn btn-qz">
+                                <i class="bi bi-check-circle me-1"></i>确认放款
+                            </button>
+                        </div>
+                    </form>
+                    {% endif %}
+                    {% if can_repay %}
+                    <button type="button" class="btn btn-outline-success" data-bs-toggle="modal" data-bs-target="#repayModal">
+                        <i class="bi bi-cash-coin me-1"></i>还款
+                    </button>
+                    {% endif %}
+                    {% if can_mark_overdue %}
+                    <form method="post" action="/finance/loans/{{ loan.id }}/overdue" class="d-inline"
+                          onsubmit="return confirm('确认标记为逾期？');">
+                        <button type="submit" class="btn btn-outline-danger">
+                            <i class="bi bi-exclamation-triangle me-1"></i>标记逾期
+                        </button>
+                    </form>
+                    {% endif %}
+                    {% if can_settle %}
+                    <form method="post" action="/finance/loans/{{ loan.id }}/settle" class="d-inline"
+                          onsubmit="return confirm('确认结清此押汇？此操作不可撤销！');">
+                        <button type="submit" class="btn btn-outline-success">
+                            <i class="bi bi-check-all me-1"></i>结清
+                        </button>
+                    </form>
+                    {% endif %}
+                    {% if can_accrue %}
+                    <button type="button" class="btn btn-outline-info" data-bs-toggle="modal" data-bs-target="#accrueModal">
+                        <i class="bi bi-calculator me-1"></i>计提利息
+                    </button>
+                    {% endif %}
+                    {% if can_remind %}
+                    <button type="button" class="btn btn-outline-warning" data-bs-toggle="modal" data-bs-target="#remindModal">
+                        <i class="bi bi-bell me-1"></i>催收提醒
+                    </button>
+                    {% endif %}
+                    {% if can_recover %}
+                    <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#recoverModal">
+                        <i class="bi bi-shield me-1"></i>登记追偿
+                    </button>
+                    {% endif %}
+                    {% if can_bad_debt %}
+                    <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#badDebtModal">
+                        <i class="bi bi-x-octagon me-1"></i>坏账处理
+                    </button>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        {% if loan.accruals %}
+        <div class="card card-qz mb-4">
+            <div class="card-header">
+                <i class="bi bi-calculator me-2"></i>利息计提记录
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead style="background-color: var(--qz-light);">
+                            <tr>
+                                <th>计提期间</th>
+                                <th>计提金额</th>
+                                <th>计提日期</th>
+                                <th>经办人</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for a in loan.accruals %}
+                            <tr>
+                                <td>{{ a.period_start }} ~ {{ a.period_end }}</td>
+                                <td><strong>{{ a.accrual_amount }} 两</strong></td>
+                                <td>{{ a.accrual_date }}</td>
+                                <td>{{ a.operator_name }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if loan.reminders %}
+        <div class="card card-qz mb-4">
+            <div class="card-header">
+                <i class="bi bi-bell me-2"></i>催收记录
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead style="background-color: var(--qz-light);">
+                            <tr>
+                                <th>催收方式</th>
+                                <th>催收日期</th>
+                                <th>内容</th>
+                                <th>经办人</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for r in loan.reminders %}
+                            <tr>
+                                <td>{{ r.reminder_type }}</td>
+                                <td>{{ r.reminder_date }}</td>
+                                <td>{{ r.content }}</td>
+                                <td>{{ r.operator_name }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if loan.recoveries %}
+        <div class="card card-qz mb-4">
+            <div class="card-header">
+                <i class="bi bi-shield me-2"></i>追偿记录
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead style="background-color: var(--qz-light);">
+                            <tr>
+                                <th>追偿方式</th>
+                                <th>追偿金额</th>
+                                <th>追偿日期</th>
+                                <th>备注</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for r in loan.recoveries %}
+                            <tr>
+                                <td>{{ r.recovery_type }}</td>
+                                <td><strong>{{ r.recovery_amount }} 两</strong></td>
+                                <td>{{ r.recovery_date }}</td>
+                                <td>{{ r.remark or '—' }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if loan.bad_debts %}
+        <div class="card card-qz mb-4">
+            <div class="card-header">
+                <i class="bi bi-x-octagon me-2"></i>坏账记录
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead style="background-color: var(--qz-light);">
+                            <tr>
+                                <th>剩余本金</th>
+                                <th>剩余利息</th>
+                                <th>拨备金额</th>
+                                <th>拨备比例</th>
+                                <th>坏账日期</th>
+                                <th>备注</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for b in loan.bad_debts %}
+                            <tr>
+                                <td>{{ b.principal_remaining }} 两</td>
+                                <td>{{ b.interest_remaining }} 两</td>
+                                <td>{{ b.provision_amount }} 两</td>
+                                <td>{{ b.provision_ratio }}％</td>
+                                <td>{{ b.bad_debt_date }}</td>
+                                <td>{{ b.remark or '—' }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card card-qz">
+            <div class="card-header">
+                <i class="bi bi-clock-history me-2"></i>流转时间线
+            </div>
+            <div class="card-body">
+                {% if timeline %}
+                {% for item in timeline %}
+                <div class="timeline-item">
+                    <div class="d-flex justify-content-between">
+                        <strong style="color: var(--qz-primary);">{{ item.action }}</strong>
+                        <small class="text-muted">{{ item.action_date }}</small>
+                    </div>
+                    <div class="text-muted" style="font-size: 0.85rem;">
+                        <div><i class="bi bi-person me-1"></i>{{ item.actor }}</div>
+                        {% if item.detail %}
+                        <div class="mt-1">{{ item.detail }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+                {% else %}
+                <p class="text-muted text-center">暂无流转记录</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if can_repay %}
+<div class="modal fade" id="repayModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="/finance/loans/{{ loan.id }}/repay">
+                <div class="modal-header" style="background: linear-gradient(135deg, var(--qz-primary), var(--qz-secondary)); color: var(--qz-light);">
+                    <h5 class="modal-title"><i class="bi bi-cash-coin me-2"></i>还款</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="repay_principal" class="form-label fw-bold">还本金额（两）</label>
+                        <input type="number" class="form-control" id="repay_principal" name="repay_principal" step="0.01" min="0.01" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="repay_interest" class="form-label fw-bold">还息金额（两）</label>
+                        <input type="number" class="form-control" id="repay_interest" name="repay_interest" step="0.01" min="0" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-qz">确认还款</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if can_accrue %}
+<div class="modal fade" id="accrueModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="/interest-accruals/create">
+                <input type="hidden" name="loan_id" value="{{ loan.id }}">
+                <div class="modal-header" style="background: linear-gradient(135deg, var(--qz-primary), var(--qz-secondary)); color: var(--qz-light);">
+                    <h5 class="modal-title"><i class="bi bi-calculator me-2"></i>计提利息</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="period_start" class="form-label fw-bold">计提开始日期</label>
+                        <input type="date" class="form-control" id="period_start" name="period_start" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="period_end" class="form-label fw-bold">计提结束日期</label>
+                        <input type="date" class="form-control" id="period_end" name="period_end" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-qz">确认计提</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if can_remind %}
+<div class="modal fade" id="remindModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="/collections/reminder">
+                <input type="hidden" name="loan_id" value="{{ loan.id }}">
+                <div class="modal-header" style="background: linear-gradient(135deg, var(--qz-primary), var(--qz-secondary)); color: var(--qz-light);">
+                    <h5 class="modal-title"><i class="bi bi-bell me-2"></i>催收提醒</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="reminder_type" class="form-label fw-bold">催收方式</label>
+                        <select class="form-select" id="reminder_type" name="reminder_type" required>
+                            <option value="">-- 选择方式 --</option>
+                            <option value="信函">信函</option>
+                            <option value="电报">电报</option>
+                            <option value="当面">当面</option>
+                            <option value="公告">公告</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="reminder_date" class="form-label fw-bold">催收日期</label>
+                        <input type="date" class="form-control" id="reminder_date" name="reminder_date" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="content" class="form-label fw-bold">催收内容</label>
+                        <textarea class="form-control" id="content" name="content" rows="3" required placeholder="请填写催收内容"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-qz">确认催收</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if can_recover %}
+<div class="modal fade" id="recoverModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="/collections/recovery">
+                <input type="hidden" name="loan_id" value="{{ loan.id }}">
+                <div class="modal-header" style="background: linear-gradient(135deg, var(--qz-primary), var(--qz-secondary)); color: var(--qz-light);">
+                    <h5 class="modal-title"><i class="bi bi-shield me-2"></i>登记追偿</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="recovery_type" class="form-label fw-bold">追偿方式</label>
+                        <select class="form-select" id="recovery_type" name="recovery_type" required>
+                            <option value="">-- 选择方式 --</option>
+                            <option value="抵押物处置">抵押物处置</option>
+                            <option value="担保人代偿">担保人代偿</option>
+                            <option value="法律诉讼">法律诉讼</option>
+                            <option value="协商还款">协商还款</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="recovery_amount" class="form-label fw-bold">追偿金额（两）</label>
+                        <input type="number" class="form-control" id="recovery_amount" name="recovery_amount" step="0.01" min="0.01" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="recovery_date" class="form-label fw-bold">追偿日期</label>
+                        <input type="date" class="form-control" id="recovery_date" name="recovery_date" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="remark" class="form-label fw-bold">备注</label>
+                        <textarea class="form-control" id="remark" name="remark" rows="2" placeholder="可选填写备注"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-qz">确认追偿</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if can_bad_debt %}
+<div class="modal fade" id="badDebtModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="/collections/bad-debt">
+                <input type="hidden" name="loan_id" value="{{ loan.id }}">
+                <div class="modal-header" style="background: linear-gradient(135deg, var(--qz-primary), var(--qz-secondary)); color: var(--qz-light);">
+                    <h5 class="modal-title"><i class="bi bi-x-octagon me-2"></i>坏账处理</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="principal_remaining" class="form-label fw-bold">剩余本金（两）</label>
+                            <input type="number" class="form-control" id="principal_remaining" name="principal_remaining" step="0.01" min="0" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="interest_remaining" class="form-label fw-bold">剩余利息（两）</label>
+                            <input type="number" class="form-control" id="interest_remaining" name="interest_remaining" step="0.01" min="0" required>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="provision_amount" class="form-label fw-bold">拨备金额（两）</label>
+                            <input type="number" class="form-control" id="provision_amount" name="provision_amount" step="0.01" min="0" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="provision_ratio" class="form-label fw-bold">拨备比例（％）</label>
+                            <input type="number" class="form-control" id="provision_ratio" name="provision_ratio" step="0.01" min="0" max="100" required>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="bad_debt_date" class="form-label fw-bold">坏账日期</label>
+                        <input type="date" class="form-control" id="bad_debt_date" name="bad_debt_date" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="remark" class="form-label fw-bold">备注</label>
+                        <textarea class="form-control" id="remark" name="remark" rows="2" placeholder="可选填写备注"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-danger"
+                            onclick="return confirm('确认进行坏账处理？此操作不可撤销！');">
+                        <i class="bi bi-x-octagon me-1"></i>确认坏账
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

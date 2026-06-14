@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+
+{% block title %}{% if credit %}编辑客户授信 - 传统钱庄汇票协同清算与额度风控系统{% else %}新增客户授信 - 传统钱庄汇票协同清算与额度风控系统{% endif %}{% endblock %}
+
+{% block content %}
+<div class="mb-3">
+    <a href="/customer-credits" class="text-decoration-none" style="color: var(--qz-secondary);">
+        <i class="bi bi-arrow-left me-1"></i>返回授信列表
+    </a>
+</div>
+
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card card-qz">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-{% if credit %}pencil{% else %}plus-circle{% endif %} me-2"></i>{% if credit %}编辑客户授信{% else %}新增客户授信{% endif %}</span>
+                {% if credit %}
+                <span class="badge {% if credit.status == '生效' %}badge-valid{% elif credit.status == '冻结' %}badge-frozen{% else %}badge-voided{% endif %}">
+                    {{ credit.status }}
+                </span>
+                {% endif %}
+            </div>
+            <div class="card-body">
+                <form method="post" action="{% if credit %}/customer-credits/{{ credit.id }}/edit{% else %}/customer-credits/create{% endif %}">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label for="customer_name" class="form-label fw-bold">
+                                <i class="bi bi-person me-1"></i>客户名称 <span class="text-danger">*</span>
+                            </label>
+                            <input type="text" class="form-control" id="customer_name" name="customer_name"
+                                   required value="{% if credit %}{{ credit.customer_name }}{% endif %}">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="customer_type" class="form-label fw-bold">
+                                <i class="bi bi-tag me-1"></i>客户类型 <span class="text-danger">*</span>
+                            </label>
+                            <select class="form-select" id="customer_type" name="customer_type" required>
+                                <option value="商号" {% if credit and credit.customer_type == '商号' %}selected{% endif %}>商号</option>
+                                <option value="个人" {% if credit and credit.customer_type == '个人' %}selected{% endif %}>个人</option>
+                                <option value="官府" {% if credit and credit.customer_type == '官府' %}selected{% endif %}>官府</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="credit_limit" class="form-label fw-bold">
+                                <i class="bi bi-wallet2 me-1"></i>授信额度（两） <span class="text-danger">*</span>
+                            </label>
+                            <input type="number" class="form-control" id="credit_limit" name="credit_limit"
+                                   step="0.01" min="0" required value="{% if credit %}{{ credit.credit_limit }}{% endif %}">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="rate_annual" class="form-label fw-bold">
+                                <i class="bi bi-percent me-1"></i>年利率（%） <span class="text-danger">*</span>
+                            </label>
+                            <input type="number" class="form-control" id="rate_annual" name="rate_annual"
+                                   step="0.01" min="0" required value="{% if credit %}{{ credit.rate_annual }}{% endif %}">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="branch_id" class="form-label fw-bold">
+                                <i class="bi bi-building me-1"></i>关联分号 <span class="text-danger">*</span>
+                            </label>
+                            <select class="form-select" id="branch_id" name="branch_id" required>
+                                <option value="">请选择分号</option>
+                                {% for b in branches %}
+                                <option value="{{ b.id }}" {% if credit and credit.branch_id == b.id %}selected{% endif %}>{{ b.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        {% if credit %}
+                        <div class="col-md-6">
+                            <label for="status" class="form-label fw-bold">
+                                <i class="bi bi-flag me-1"></i>状态 <span class="text-danger">*</span>
+                            </label>
+                            <select class="form-select" id="status" name="status" required>
+                                <option value="生效" {% if credit.status == '生效' %}selected{% endif %}>生效</option>
+                                <option value="冻结" {% if credit.status == '冻结' %}selected{% endif %}>冻结</option>
+                                <option value="注销" {% if credit.status == '注销' %}selected{% endif %}>注销</option>
+                            </select>
+                        </div>
+                        {% endif %}
+                        <div class="col-12">
+                            <label for="remark" class="form-label fw-bold">
+                                <i class="bi bi-journal-text me-1"></i>备注
+                            </label>
+                            <textarea class="form-control" id="remark" name="remark" rows="3">{% if credit %}{{ credit.remark or '' }}{% endif %}</textarea>
+                        </div>
+                    </div>
+                    <div class="d-flex gap-2 mt-4">
+                        <button type="submit" class="btn btn-qz">
+                            <i class="bi bi-save me-1"></i>{% if credit %}保存修改{% else %}创建授信{% endif %}
+                        </button>
+                        <a href="/customer-credits" class="btn btn-outline-secondary">
+                            <i class="bi bi-x-circle me-1"></i>取消
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

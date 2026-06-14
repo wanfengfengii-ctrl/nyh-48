@@ -74,6 +74,8 @@
         .badge-frozen { background-color: #17a2b8; }
         .badge-settled { background-color: #198754; }
         .badge-reconciled { background-color: #0d6efd; }
+        .badge-info { background-color: #0dcaf0; color: #000; }
+        .badge-overdue { background-color: #dc3545; }
         .timeline-item {
             position: relative;
             padding-left: 30px;
@@ -207,6 +209,23 @@
                             {% if user.role in ('总号掌柜', '分号掌柜') %}
                             <li><a class="dropdown-item" href="/clearings/create"><i class="bi bi-plus-circle me-1"></i>登记清算</a></li>
                             {% endif %}
+                        </ul>
+                    </li>
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+                            <i class="bi bi-cash-stack me-1"></i>融资管理
+                        </a>
+                        <ul class="dropdown-menu dropdown-menu-qz">
+                            <li><a class="dropdown-item" href="/finance/loans"><i class="bi bi-list-ul me-1"></i>押汇融资</a></li>
+                            {% if user.role in ('总号掌柜', '分号掌柜', '票号经办人') %}
+                            <li><a class="dropdown-item" href="/finance/loans/apply"><i class="bi bi-plus-circle me-1"></i>申请押汇</a></li>
+                            {% endif %}
+                            <li><hr class="dropdown-divider"></li>
+                            {% if user.role in ('总号掌柜', '分号掌柜', '稽核员') %}
+                            <li><a class="dropdown-item" href="/customer-credits"><i class="bi bi-people me-1"></i>客户授信</a></li>
+                            {% endif %}
+                            <li><a class="dropdown-item" href="/interest-accruals"><i class="bi bi-calculator me-1"></i>利息计提</a></li>
+                            <li><a class="dropdown-item" href="/collections"><i class="bi bi-bell me-1"></i>催收追偿</a></li>
                         </ul>
                     </li>
                     {% if user.role in ('总号掌柜', '稽核员') %}

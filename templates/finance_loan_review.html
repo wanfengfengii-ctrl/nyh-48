@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+
+{% block title %}押汇复核 - 传统钱庄汇票协同清算与额度风控系统{% endblock %}
+
+{% block content %}
+<div class="mb-3">
+    <a href="/finance/loans" class="text-decoration-none" style="color: var(--qz-secondary);">
+        <i class="bi bi-arrow-left me-1"></i>返回押汇列表
+    </a>
+</div>
+
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card card-qz mb-4">
+            <div class="card-header">
+                <i class="bi bi-file-earmark-text me-2"></i>押汇申请详情
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4">
+                        <strong style="color: var(--qz-secondary);">票号</strong>
+                        <div>{{ loan.bill_no }}</div>
+                    </div>
+                    <div class="col-md-4">
+                        <strong style="color: var(--qz-secondary);">客户</strong>
+                        <div>{{ loan.customer_name }}</div>
+                    </div>
+                    <div class="col-md-4">
+                        <strong style="color: var(--qz-secondary);">融资金额</strong>
+                        <div class="fw-bold" style="color: var(--qz-primary);">{{ loan.loan_amount }} 两</div>
+                    </div>
+                </div>
+                <hr>
+                <div class="row">
+                    <div class="col-md-4">
+                        <strong style="color: var(--qz-secondary);">年利率</strong>
+                        <div>{{ loan.rate_annual }}％</div>
+                    </div>
+                    <div class="col-md-4">
+                        <strong style="color: var(--qz-secondary);">到期日</strong>
+                        <div>{{ loan.due_date }}</div>
+                    </div>
+                    <div class="col-md-4">
+                        <strong style="color: var(--qz-secondary);">经办人</strong>
+                        <div>{{ loan.applicant_name }}</div>
+                    </div>
+                </div>
+                <hr>
+                <div class="row">
+                    <div class="col-md-4">
+                        <strong style="color: var(--qz-secondary);">分号</strong>
+                        <div>{{ loan.branch_name or '—' }}</div>
+                    </div>
+                    <div class="col-md-4">
+                        <strong style="color: var(--qz-secondary);">票面金额</strong>
+                        <div>{{ loan.bill_amount }} 两</div>
+                    </div>
+                    <div class="col-md-4">
+                        <strong style="color: var(--qz-secondary);">签发日期</strong>
+                        <div>{{ loan.issue_date }}</div>
+                    </div>
+                </div>
+                <div class="row mt-3">
+                    <div class="col-md-4">
+                        <strong style="color: var(--qz-secondary);">到期日期</strong>
+                        <div>{{ loan.bill_due_date or '—' }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card card-qz">
+            <div class="card-header">
+                <i class="bi bi-check2-square me-2"></i>复核审核
+            </div>
+            <div class="card-body p-4">
+                <form method="post" action="/finance/loans/{{ loan.id }}/review">
+                    <div class="mb-3">
+                        <label for="review_comment" class="form-label fw-bold">
+                            <i class="bi bi-chat-left-text me-1"></i>复核意见
+                        </label>
+                        <textarea class="form-control" id="review_comment" name="review_comment" rows="3"
+                                  placeholder="请填写复核意见（可选）"></textarea>
+                    </div>
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                        <a href="/finance/loans" class="btn btn-outline-secondary">取消</a>
+                        <button type="submit" name="action" value="reject" class="btn btn-outline-danger"
+                                onclick="return confirm('确认拒绝此押汇申请？');">
+                            <i class="bi bi-x-circle me-2"></i>拒绝
+                        </button>
+                        <button type="submit" name="action" value="approve" class="btn btn-qz"
+                                onclick="return confirm('确认通过此押汇申请？');">
+                            <i class="bi bi-check-circle me-2"></i>通过
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -98,6 +98,11 @@
                         </button>
                     </form>
                     {% endif %}
+                    {% if bill.status == '有效' and user.role in ('总号掌柜', '分号掌柜', '票号经办人') %}
+                    <a href="/finance/loans/apply?bill_id={{ bill.id }}" class="btn btn-outline-warning">
+                        <i class="bi bi-cash-stack me-1"></i>申请押汇
+                    </a>
+                    {% endif %}
                 </div>
 
                 {% if can_lost or can_freeze or can_unfreeze or can_recover or can_reverse %}
@@ -313,6 +318,66 @@
                                     {% else %}
                                     <span class="badge badge-reconciled">已对账</span>
                                     {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if finance_loans %}
+        <div class="card card-qz mb-4">
+            <div class="card-header">
+                <i class="bi bi-cash-stack me-2"></i>关联押汇融资
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead style="background-color: var(--qz-light);">
+                            <tr>
+                                <th>客户</th>
+                                <th>融资金额</th>
+                                <th>年利率</th>
+                                <th>到期日</th>
+                                <th>经办人</th>
+                                <th>状态</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for fl in finance_loans %}
+                            <tr>
+                                <td>{{ fl.customer_name }}</td>
+                                <td><strong>{{ fl.loan_amount }} 两</strong></td>
+                                <td>{{ fl.rate_annual }}%</td>
+                                <td>{{ fl.due_date or '—' }}</td>
+                                <td>{{ fl.applicant_name }}</td>
+                                <td>
+                                    {% if fl.status == '待审核' %}
+                                    <span class="badge badge-pending">待审核</span>
+                                    {% elif fl.status == '已复核' %}
+                                    <span class="badge badge-info">已复核</span>
+                                    {% elif fl.status == '已放款' %}
+                                    <span class="badge badge-valid">已放款</span>
+                                    {% elif fl.status == '还款中' %}
+                                    <span class="badge badge-settled">还款中</span>
+                                    {% elif fl.status == '已结清' %}
+                                    <span class="badge badge-approved">已结清</span>
+                                    {% elif fl.status == '已逾期' %}
+                                    <span class="badge badge-overdue">已逾期</span>
+                                    {% elif fl.status == '已拒绝' %}
+                                    <span class="badge badge-rejected">已拒绝</span>
+                                    {% else %}
+                                    <span class="badge badge-voided">已取消</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <a href="/finance/loans/{{ fl.id }}" class="btn btn-sm btn-qz">
+                                        <i class="bi bi-eye me-1"></i>查看
+                                    </a>
                                 </td>
                             </tr>
                             {% endfor %}

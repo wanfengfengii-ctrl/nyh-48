@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+
+{% block title %}利息计提 - 传统钱庄汇票协同清算与额度风控系统{% endblock %}
+
+{% block extra_css %}
+<style>
+    .badge-info { background-color: #0dcaf0; color: #000; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="fw-bold mb-0" style="color: var(--qz-primary);">
+        <i class="bi bi-calculator me-2"></i>利息计提
+    </h4>
+    {% if user.role in ('总号掌柜', '分号掌柜', '票号经办人') %}
+    <button class="btn btn-qz" data-bs-toggle="modal" data-bs-target="#accrualModal">
+        <i class="bi bi-plus-circle me-1"></i>新增计提
+    </button>
+    {% endif %}
+</div>
+
+<div class="card card-qz">
+    <div class="card-body p-0">
+        {% if accruals %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead style="background-color: var(--qz-light);">
+                    <tr>
+                        <th>票号</th>
+                        <th>客户</th>
+                        <th>计提期间</th>
+                        <th>天数</th>
+                        <th>本金（两）</th>
+                        <th>日利率</th>
+                        <th>利息金额（两）</th>
+                        <th>状态</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for a in accruals %}
+                    <tr>
+                        <td><strong>{{ a.bill_no }}</strong></td>
+                        <td>{{ a.customer_name }}</td>
+                        <td>{{ a.period_start }} ~ {{ a.period_end }}</td>
+                        <td>{{ a.days }}</td>
+                        <td>{{ "%.2f"|format(a.principal) }}</td>
+                        <td>{{ "%.6f"|format(a.rate_daily) }}%</td>
+                        <td class="fw-bold" style="color: var(--qz-primary);">{{ "%.2f"|format(a.interest_amount) }}</td>
+                        <td>
+                            {% if a.status == '待计提' %}
+                            <span class="badge badge-pending">待计提</span>
+                            {% elif a.status == '已计提' %}
+                            <span class="badge badge-info">已计提</span>
+                            {% else %}
+                            <span class="badge badge-approved">已收取</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if a.status == '待计提' and user.role in ('总号掌柜', '分号掌柜', '复核人') %}
+                            <form method="post" action="/interest-accruals/{{ a.id }}/confirm" class="d-inline">
+                                <button type="submit" class="btn btn-sm btn-qz">
+                                    <i class="bi bi-check2 me-1"></i>确认计提
+                                </button>
+                            </form>
+                            {% elif a.status == '已计提' and user.role in ('总号掌柜', '分号掌柜') %}
+                            <form method="post" action="/interest-accruals/{{ a.id }}/collect" class="d-inline">
+                                <button type="submit" class="btn btn-sm btn-qz">
+                                    <i class="bi bi-cash-coin me-1"></i>收取利息
+                                </button>
+                            </form>
+                            {% else %}
+                            <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5 text-muted">
+            <i class="bi bi-calculator fs-1 d-block mb-3"></i>
+            <p>暂无利息计提记录</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{% if user.role in ('总号掌柜', '分号掌柜', '票号经办人') %}
+<div class="modal fade" id="accrualModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="/interest-accruals/create">
+                <div class="modal-header" style="background: linear-gradient(135deg, var(--qz-primary), var(--qz-secondary)); color: var(--qz-light);">
+                    <h5 class="modal-title"><i class="bi bi-plus-circle me-2"></i>新增利息计提</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="loan_id" class="form-label fw-bold">
+                            <i class="bi bi-file-earmark-text me-1"></i>融资票据 <span class="text-danger">*</span>
+                        </label>
+                        <select class="form-select" id="loan_id" name="loan_id" required>
+                            <option value="">请选择融资票据</option>
+                            {% for l in active_loans %}
+                            <option value="{{ l.id }}">{{ l.bill_no }} - {{ l.customer_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="period_start" class="form-label fw-bold">
+                            <i class="bi bi-calendar-event me-1"></i>计提开始日期 <span class="text-danger">*</span>
+                        </label>
+                        <input type="date" class="form-control" id="period_start" name="period_start" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="period_end" class="form-label fw-bold">
+                            <i class="bi bi-calendar-check me-1"></i>计提结束日期 <span class="text-danger">*</span>
+                        </label>
+                        <input type="date" class="form-control" id="period_end" name="period_end" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-qz">
+                        <i class="bi bi-save me-1"></i>提交计提
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

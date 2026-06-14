@@ -156,6 +156,126 @@ def init_db():
     )
     """)
 
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS customer_credits (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        customer_name TEXT NOT NULL,
+        customer_type TEXT NOT NULL CHECK(customer_type IN ('商号', '个人', '官府')),
+        credit_limit REAL NOT NULL DEFAULT 0 CHECK(credit_limit >= 0),
+        used_limit REAL NOT NULL DEFAULT 0 CHECK(used_limit >= 0),
+        rate_annual REAL NOT NULL DEFAULT 0 CHECK(rate_annual >= 0),
+        status TEXT NOT NULL DEFAULT '生效' CHECK(status IN ('生效', '冻结', '注销')),
+        branch_id INTEGER,
+        remark TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT,
+        FOREIGN KEY (branch_id) REFERENCES branches(id)
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS finance_loans (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        bill_id INTEGER NOT NULL,
+        customer_name TEXT NOT NULL,
+        loan_amount REAL NOT NULL CHECK(loan_amount > 0),
+        rate_annual REAL NOT NULL CHECK(rate_annual > 0),
+        loan_date TEXT,
+        due_date TEXT,
+        status TEXT NOT NULL DEFAULT '待审核' CHECK(status IN (
+            '待审核', '已复核', '已放款', '还款中', '已结清', '已逾期', '已拒绝', '已取消'
+        )),
+        applicant_id INTEGER NOT NULL,
+        reviewer_id INTEGER,
+        review_date TEXT,
+        review_comment TEXT,
+        approver_id INTEGER,
+        approve_date TEXT,
+        approve_comment TEXT,
+        paid_amount REAL NOT NULL DEFAULT 0,
+        interest_paid REAL NOT NULL DEFAULT 0,
+        branch_id INTEGER,
+        remark TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (bill_id) REFERENCES bills(id),
+        FOREIGN KEY (applicant_id) REFERENCES users(id),
+        FOREIGN KEY (reviewer_id) REFERENCES users(id),
+        FOREIGN KEY (approver_id) REFERENCES users(id),
+        FOREIGN KEY (branch_id) REFERENCES branches(id)
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS interest_accruals (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        loan_id INTEGER NOT NULL,
+        period_start TEXT NOT NULL,
+        period_end TEXT NOT NULL,
+        days INTEGER NOT NULL CHECK(days > 0),
+        principal REAL NOT NULL CHECK(principal > 0),
+        rate_daily REAL NOT NULL CHECK(rate_daily > 0),
+        interest_amount REAL NOT NULL CHECK(interest_amount > 0),
+        status TEXT NOT NULL DEFAULT '待计提' CHECK(status IN ('待计提', '已计提', '已收取')),
+        operator_id INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (loan_id) REFERENCES finance_loans(id),
+        FOREIGN KEY (operator_id) REFERENCES users(id)
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS collection_reminders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        loan_id INTEGER NOT NULL,
+        reminder_type TEXT NOT NULL CHECK(reminder_type IN ('到期提醒', '逾期催收', '法律催收')),
+        reminder_date TEXT NOT NULL,
+        content TEXT NOT NULL,
+        operator_id INTEGER NOT NULL,
+        status TEXT NOT NULL DEFAULT '待处理' CHECK(status IN ('待处理', '已通知', '已回应', '已忽略')),
+        response TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (loan_id) REFERENCES finance_loans(id),
+        FOREIGN KEY (operator_id) REFERENCES users(id)
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS overdue_recoveries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        loan_id INTEGER NOT NULL,
+        recovery_type TEXT NOT NULL CHECK(recovery_type IN ('协商还款', '担保代偿', '资产抵扣', '诉讼追偿', '其他')),
+        recovery_amount REAL NOT NULL CHECK(recovery_amount > 0),
+        recovery_date TEXT NOT NULL,
+        operator_id INTEGER NOT NULL,
+        status TEXT NOT NULL DEFAULT '进行中' CHECK(status IN ('进行中', '已完成', '已失败')),
+        remark TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (loan_id) REFERENCES finance_loans(id),
+        FOREIGN KEY (operator_id) REFERENCES users(id)
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS bad_debts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        loan_id INTEGER NOT NULL,
+        principal_remaining REAL NOT NULL CHECK(principal_remaining >= 0),
+        interest_remaining REAL NOT NULL DEFAULT 0,
+        provision_amount REAL NOT NULL DEFAULT 0,
+        provision_ratio REAL NOT NULL DEFAULT 0,
+        bad_debt_date TEXT NOT NULL,
+        disposal_type TEXT CHECK(disposal_type IN ('核销', '转让', '打包处置', '其他')),
+        disposal_date TEXT,
+        disposal_amount REAL DEFAULT 0,
+        operator_id INTEGER NOT NULL,
+        status TEXT NOT NULL DEFAULT '已登记' CHECK(status IN ('已登记', '已计提准备', '已处置', '已核销')),
+        remark TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (loan_id) REFERENCES finance_loans(id),
+        FOREIGN KEY (operator_id) REFERENCES users(id)
+    )
+    """)
+
     cursor.execute("SELECT COUNT(*) as cnt FROM branches")
     if cursor.fetchone()["cnt"] == 0:
         today = date.today().isoformat()

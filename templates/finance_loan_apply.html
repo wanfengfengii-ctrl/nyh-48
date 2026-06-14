@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+
+{% block title %}申请押汇 - 传统钱庄汇票协同清算与额度风控系统{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+    <a href="/finance/loans" class="text-decoration-none" style="color: var(--qz-secondary);">
+        <i class="bi bi-arrow-left me-1"></i>返回押汇列表
+    </a>
+</div>
+
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card card-qz">
+            <div class="card-header">
+                <i class="bi bi-plus-circle me-2"></i>申请押汇融资
+            </div>
+            <div class="card-body p-4">
+                {% if errors %}
+                <div class="alert alert-danger">
+                    <i class="bi bi-exclamation-triangle me-2"></i><strong>请修正以下问题：</strong>
+                    <ul class="mb-0 mt-2">
+                        {% for e in errors %}
+                        <li>{{ e }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+
+                <form method="post" action="/finance/loans/apply">
+                    <div class="mb-3">
+                        <label for="bill_id" class="form-label fw-bold">
+                            <i class="bi bi-file-earmark-text me-1"></i>关联汇票
+                        </label>
+                        <select class="form-select" id="bill_id" name="bill_id" required>
+                            <option value="">-- 选择汇票 --</option>
+                            {% for b in bills %}
+                            <option value="{{ b.id }}" {% if (selected_bill and selected_bill.id == b.id) or (form and form.bill_id|string == b.id|string) %}selected{% endif %}>
+                                {{ b.bill_no }} - {{ b.amount }}两
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    {% if selected_bill %}
+                    <div class="mb-3 p-3 rounded" style="background: var(--qz-light); border: 1px dashed var(--qz-accent);">
+                        <h6 class="fw-bold mb-2" style="color: var(--qz-secondary);">
+                            <i class="bi bi-info-circle me-1"></i>汇票信息
+                        </h6>
+                        <div class="row">
+                            <div class="col-md-4">
+                                <small style="color: var(--qz-secondary);">票面金额</small>
+                                <div class="fw-bold" style="color: var(--qz-primary);">{{ selected_bill.amount }} 两</div>
+                            </div>
+                            <div class="col-md-4">
+                                <small style="color: var(--qz-secondary);">签发日期</small>
+                                <div>{{ selected_bill.issue_date }}</div>
+                            </div>
+                            <div class="col-md-4">
+                                <small style="color: var(--qz-secondary);">到期日期</small>
+                                <div>{{ selected_bill.due_date or '未指定' }}</div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <div class="mb-3">
+                        <label for="customer_name" class="form-label fw-bold">
+                            <i class="bi bi-person me-1"></i>客户名称
+                        </label>
+                        <input type="text" class="form-control" id="customer_name" name="customer_name"
+                               value="{{ form.customer_name if form else '' }}" required
+                               list="customer_list" placeholder="请输入客户名称">
+                        <datalist id="customer_list">
+                            {% for c in credits %}
+                            <option value="{{ c.customer_name }}">
+                            {% endfor %}
+                        </datalist>
+                    </div>
+
+                    {% if credits %}
+                    <div class="mb-3">
+                        <div class="p-3 rounded" style="background: var(--qz-light); border: 1px solid var(--qz-accent);">
+                            <h6 class="fw-bold mb-2" style="color: var(--qz-secondary);">
+                                <i class="bi bi-shield-check me-1"></i>客户额度信息
+                            </h6>
+                            <div class="table-responsive">
+                                <table class="table table-sm table-hover mb-0">
+                                    <thead style="background-color: var(--qz-light);">
+                                        <tr>
+                                            <th>客户</th>
+                                            <th>授信额度</th>
+                                            <th>已用额度</th>
+                                            <th>可用额度</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for c in credits %}
+                                        <tr>
+                                            <td>{{ c.customer_name }}</td>
+                                            <td>{{ c.credit_limit }} 两</td>
+                                            <td>{{ c.used_limit }} 两</td>
+                                            <td class="fw-bold" style="color: var(--qz-primary);">{{ c.credit_limit - c.used_limit }} 两</td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="loan_amount" class="form-label fw-bold">
+                                <i class="bi bi-cash me-1"></i>融资金额（两）
+                            </label>
+                            <input type="number" class="form-control" id="loan_amount" name="loan_amount"
+                                   value="{{ form.loan_amount if form else '' }}" step="0.01" min="0.01" required
+                                   placeholder="请输入融资金额">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="rate_annual" class="form-label fw-bold">
+                                <i class="bi bi-percent me-1"></i>年利率（％）
+                            </label>
+                            <input type="number" class="form-control" id="rate_annual" name="rate_annual"
+                                   value="{{ form.rate_annual if form else '' }}" step="0.01" min="0" required
+                                   placeholder="请输入年利率">
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="due_date" class="form-label fw-bold">
+                                <i class="bi bi-calendar-check me-1"></i>到期日
+                            </label>
+                            <input type="date" class="form-control" id="due_date" name="due_date"
+                                   value="{{ form.due_date if form else '' }}" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="branch_id" class="form-label fw-bold">
+                                <i class="bi bi-building me-1"></i>分号
+                            </label>
+                            <select class="form-select" id="branch_id" name="branch_id" required>
+                                <option value="">-- 选择分号 --</option>
+                                {% for b in branches %}
+                                <option value="{{ b.id }}" {% if form and form.branch_id|string == b.id|string %}selected{% endif %}>
+                                    {{ b.branch_name }}（{{ b.branch_code }}）
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="remark" class="form-label fw-bold">
+                            <i class="bi bi-chat-left-text me-1"></i>备注
+                        </label>
+                        <textarea class="form-control" id="remark" name="remark" rows="3"
+                                  placeholder="可选填写备注信息">{{ form.remark if form else '' }}</textarea>
+                    </div>
+
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                        <a href="/finance/loans" class="btn btn-outline-secondary">取消</a>
+                        <button type="submit" class="btn btn-qz">
+                            <i class="bi bi-check2-circle me-2"></i>提交申请
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
