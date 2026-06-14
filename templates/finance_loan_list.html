@@ -14,7 +14,7 @@
     <h4 class="fw-bold mb-0" style="color: var(--qz-primary);">
         <i class="bi bi-cash-coin me-2"></i>押汇融资
     </h4>
-    {% if user.role in OPERATOR_ROLES %}
+    {% if user.role in ('总号掌柜', '分号掌柜', '票号经办人') %}
     <a href="/finance/loans/apply" class="btn btn-qz">
         <i class="bi bi-plus-circle me-2"></i>申请押汇
     </a>

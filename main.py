@@ -1937,10 +1937,14 @@ def interest_accruals_list(request: Request, loan_id: Optional[int] = None, user
     sql += " ORDER BY ia.id DESC"
     cursor.execute(sql, params)
     accruals = [dict(row) for row in cursor.fetchall()]
+    cursor.execute(
+        "SELECT fl.*, b.bill_no FROM finance_loans fl LEFT JOIN bills b ON fl.bill_id = b.id WHERE fl.status IN ('已放款', '还款中', '已逾期') ORDER BY fl.id DESC"
+    )
+    active_loans = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return templates.TemplateResponse(
         "interest_accruals.html",
-        {"request": request, "user": user, "accruals": accruals},
+        {"request": request, "user": user, "accruals": accruals, "active_loans": active_loans},
     )
 
 

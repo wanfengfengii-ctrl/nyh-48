@@ -60,7 +60,7 @@
                                 <td><strong>{{ l.bill_no }}</strong></td>
                                 <td>{{ l.customer_name }}</td>
                                 <td>{{ "%.2f"|format(l.loan_amount) }}</td>
-                                <td>{{ "%.2f"|format(l.repaid_amount) }}</td>
+                                <td>{{ "%.2f"|format(l.paid_amount) }}</td>
                                 <td>{{ l.due_date }}</td>
                                 <td>
                                     {% if l.status == '已逾期' %}
@@ -515,10 +515,10 @@
                         </label>
                         <select class="form-select" id="disposal_type" name="disposal_type">
                             <option value="">请选择</option>
-                            <option value="现金收回">现金收回</option>
-                            <option value="资产抵债">资产抵债</option>
-                            <option value="担保代偿">担保代偿</option>
-                            <option value="核销处理">核销处理</option>
+                            <option value="核销">核销</option>
+                            <option value="转让">转让</option>
+                            <option value="打包处置">打包处置</option>
+                            <option value="其他">其他</option>
                         </select>
                     </div>
                     <div class="mb-3">

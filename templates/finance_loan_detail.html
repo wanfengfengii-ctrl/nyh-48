@@ -88,10 +88,10 @@
                 </h6>
                 <div class="mb-2 d-flex justify-content-between">
                     <span>已还本金 / 融资总额</span>
-                    <span class="fw-bold" style="color: var(--qz-primary);">{{ loan.repaid_principal|default(0) }} / {{ loan.loan_amount }} 两</span>
+                    <span class="fw-bold" style="color: var(--qz-primary);">{{ loan.paid_amount|default(0) }} / {{ loan.loan_amount }} 两</span>
                 </div>
                 <div class="progress mb-2" style="height: 20px;">
-                    {% set repay_pct = ((loan.repaid_principal|default(0) / loan.loan_amount) * 100)|int if loan.loan_amount else 0 %}
+                    {% set repay_pct = ((loan.paid_amount|default(0) / loan.loan_amount) * 100)|int if loan.loan_amount else 0 %}
                     <div class="progress-bar" role="progressbar"
                          style="width: {{ repay_pct }}%; background: linear-gradient(135deg, var(--qz-primary), var(--qz-secondary));"
                          aria-valuenow="{{ repay_pct }}" aria-valuemin="0" aria-valuemax="100">
@@ -99,7 +99,7 @@
                     </div>
                 </div>
                 <div class="text-muted" style="font-size: 0.9rem;">
-                    <i class="bi bi-cash me-1"></i>已收利息：<strong style="color: var(--qz-accent);">{{ loan.repaid_interest|default(0) }} 两</strong>
+                    <i class="bi bi-cash me-1"></i>已收利息：<strong style="color: var(--qz-accent);">{{ loan.interest_paid|default(0) }} 两</strong>
                 </div>
                 {% endif %}
 
@@ -186,8 +186,8 @@
                             {% for a in loan.accruals %}
                             <tr>
                                 <td>{{ a.period_start }} ~ {{ a.period_end }}</td>
-                                <td><strong>{{ a.accrual_amount }} 两</strong></td>
-                                <td>{{ a.accrual_date }}</td>
+                                <td><strong>{{ a.interest_amount }} 两</strong></td>
+                                <td>{{ a.created_at }}</td>
                                 <td>{{ a.operator_name }}</td>
                             </tr>
                             {% endfor %}
@@ -399,13 +399,12 @@
                 </div>
                 <div class="modal-body">
                     <div class="mb-3">
-                        <label for="reminder_type" class="form-label fw-bold">催收方式</label>
+                        <label for="reminder_type" class="form-label fw-bold">催收类型</label>
                         <select class="form-select" id="reminder_type" name="reminder_type" required>
-                            <option value="">-- 选择方式 --</option>
-                            <option value="信函">信函</option>
-                            <option value="电报">电报</option>
-                            <option value="当面">当面</option>
-                            <option value="公告">公告</option>
+                            <option value="">-- 选择类型 --</option>
+                            <option value="到期提醒">到期提醒</option>
+                            <option value="逾期催收">逾期催收</option>
+                            <option value="法律催收">法律催收</option>
                         </select>
                     </div>
                     <div class="mb-3">
@@ -442,10 +441,11 @@
                         <label for="recovery_type" class="form-label fw-bold">追偿方式</label>
                         <select class="form-select" id="recovery_type" name="recovery_type" required>
                             <option value="">-- 选择方式 --</option>
-                            <option value="抵押物处置">抵押物处置</option>
-                            <option value="担保人代偿">担保人代偿</option>
-                            <option value="法律诉讼">法律诉讼</option>
                             <option value="协商还款">协商还款</option>
+                            <option value="担保代偿">担保代偿</option>
+                            <option value="资产抵扣">资产抵扣</option>
+                            <option value="诉讼追偿">诉讼追偿</option>
+                            <option value="其他">其他</option>
                         </select>
                     </div>
                     <div class="mb-3">
