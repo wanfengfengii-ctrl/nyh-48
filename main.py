@@ -1117,17 +1117,38 @@ def review_submit(
 
 
 @app.get("/clearings", response_class=HTMLResponse)
-def clearings_list(request: Request, user=Depends(auth_dep)):
+def clearings_list(request: Request, type: str = "", user=Depends(auth_dep)):
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute(
-        "SELECT c.*, bf.branch_name as from_branch_name, bt.branch_name as to_branch_name, b.bill_no, u.real_name as operator_name FROM clearings c LEFT JOIN branches bf ON c.from_branch_id = bf.id LEFT JOIN branches bt ON c.to_branch_id = bt.id LEFT JOIN bills b ON c.bill_id = b.id LEFT JOIN users u ON c.operator_id = u.id ORDER BY c.id DESC"
-    )
+    sql = "SELECT c.*, bf.branch_name as from_branch_name, bt.branch_name as to_branch_name, b.bill_no, u.real_name as operator_name FROM clearings c LEFT JOIN branches bf ON c.from_branch_id = bf.id LEFT JOIN branches bt ON c.to_branch_id = bt.id LEFT JOIN bills b ON c.bill_id = b.id LEFT JOIN users u ON c.operator_id = u.id"
+    params = []
+    if type:
+        sql += " WHERE c.clearing_type = ?"
+        params.append(type)
+    sql += " ORDER BY c.id DESC"
+    cursor.execute(sql, params)
     clearings = [dict(row) for row in cursor.fetchall()]
+    pending_clearing = sum(1 for c in clearings if c["status"] == "待清算")
+
+    cursor.execute(
+        "SELECT cl.*, b.branch_name as display_name FROM credit_limits cl LEFT JOIN branches b ON cl.target_id = b.id AND cl.target_type = '分号' ORDER BY cl.target_type, cl.id"
+    )
+    limits = [dict(row) for row in cursor.fetchall()]
+    warnings = []
+    today = date.today().isoformat()
+    for l in limits:
+        if l["target_type"] == "分号" and l["balance_warning"] > 0:
+            cursor.execute(
+                "SELECT COALESCE(SUM(amount), 0) as total FROM bills WHERE issue_branch_id = ? AND issue_date = ? AND status != '已作废'",
+                (l["target_id"], today),
+            )
+            today_total = cursor.fetchone()["total"]
+            if today_total >= l["balance_warning"]:
+                warnings.append(f"{l['display_name']}今日已签发 {today_total} 两，达到预警阈值 {l['balance_warning']} 两")
     conn.close()
     return templates.TemplateResponse(
         "clearings.html",
-        {"request": request, "user": user, "clearings": clearings},
+        {"request": request, "user": user, "clearings": clearings, "current_type": type, "pending_clearing": pending_clearing, "warnings": warnings},
     )
 
 

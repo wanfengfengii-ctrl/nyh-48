@@ -45,7 +45,7 @@
                             {% endif %}
                         </td>
                         <td>
-                            {% if r.status == '待复核' and user.role == '复核人' %}
+                            {% if r.status == '待复核' and user.role in ('总号掌柜', '分号掌柜', '复核人') %}
                             <a href="/redemptions/{{ r.id }}/review" class="btn btn-sm btn-qz">
                                 <i class="bi bi-check2-square me-1"></i>审核
                             </a>

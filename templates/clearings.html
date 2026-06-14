@@ -63,9 +63,9 @@
 
 <div class="mb-3">
     <div class="btn-group" role="group">
-        <a href="/clearings" class="btn btn-outline-secondary active">全部</a>
-        <a href="/clearings?type=兑付清算" class="btn btn-outline-primary">兑付清算</a>
-        <a href="/clearings?type=往来登记" class="btn btn-outline-info">往来登记</a>
+        <a href="/clearings" class="btn btn-outline-secondary {% if not current_type %}active{% endif %}">全部</a>
+        <a href="/clearings?type=兑付清算" class="btn btn-outline-primary {% if current_type == '兑付清算' %}active{% endif %}">兑付清算</a>
+        <a href="/clearings?type=往来登记" class="btn btn-outline-info {% if current_type == '往来登记' %}active{% endif %}">往来登记</a>
     </div>
 </div>
 

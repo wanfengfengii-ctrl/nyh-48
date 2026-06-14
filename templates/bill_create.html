@@ -56,6 +56,20 @@
                                value="{{ form.payee if form else '' }}" required
                                placeholder="请输入收款人姓名">
                     </div>
+                    <div class="mb-3">
+                        <label for="issue_branch_id" class="form-label fw-bold">
+                            <i class="bi bi-building me-1"></i>签发分号
+                        </label>
+                        <select class="form-select" id="issue_branch_id" name="issue_branch_id">
+                            <option value="">-- 选择分号（默认本人所在分号）--</option>
+                            {% for b in branches %}
+                            <option value="{{ b.id }}" {% if form and form.issue_branch_id|string == b.id|string %}selected{% endif %}>
+                                {{ b.branch_name }}（{{ b.branch_code }}）
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">如不选择，默认使用您所属的分号</div>
+                    </div>
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label for="issue_date" class="form-label fw-bold">
