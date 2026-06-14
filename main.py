@@ -31,34 +31,39 @@ def startup():
     init_db()
 
 
-def get_current_payee(bill_id: int) -> str:
-    conn = get_db()
+def get_current_payee(bill_id: int, conn=None) -> str:
+    should_close = conn is None
+    if conn is None:
+        conn = get_db()
     cursor = conn.cursor()
     cursor.execute(
         "SELECT endorsee FROM endorsements WHERE bill_id = ? ORDER BY id DESC LIMIT 1",
         (bill_id,),
     )
     row = cursor.fetchone()
-    conn.close()
     if row:
+        if should_close:
+            conn.close()
         return row["endorsee"]
-    conn = get_db()
-    cursor = conn.cursor()
     cursor.execute("SELECT payee FROM bills WHERE id = ?", (bill_id,))
     row = cursor.fetchone()
-    conn.close()
+    if should_close:
+        conn.close()
     return row["payee"] if row else ""
 
 
-def add_timeline(bill_id: int, action: str, actor: str, detail: str = ""):
-    conn = get_db()
+def add_timeline(bill_id: int, action: str, actor: str, detail: str = "", conn=None):
+    should_close = conn is None
+    if conn is None:
+        conn = get_db()
     cursor = conn.cursor()
     cursor.execute(
         "INSERT INTO timeline (bill_id, action, actor, action_date, detail) VALUES (?, ?, ?, ?, ?)",
         (bill_id, action, actor, date.today().isoformat(), detail),
     )
-    conn.commit()
-    conn.close()
+    if should_close:
+        conn.commit()
+        conn.close()
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -205,9 +210,12 @@ def bill_create(
             (bill_no, amount, user["id"], payee, issue_date, due_date or None, remark),
         )
         bill_id = cursor.lastrowid
-        cursor.execute(
-            "INSERT INTO timeline (bill_id, action, actor, action_date, detail) VALUES (?, ?, ?, ?, ?)",
-            (bill_id, "签发", user["real_name"], date.today().isoformat(), f"签发汇票 {bill_no}，票面金额 {amount} 两，收款人 {payee}"),
+        add_timeline(
+            bill_id,
+            "签发",
+            user["real_name"],
+            f"签发汇票 {bill_no}，票面金额 {amount} 两，收款人 {payee}",
+            conn,
         )
         conn.commit()
         conn.close()
@@ -251,7 +259,7 @@ def bill_detail(request: Request, bill_id: int, user=Depends(auth_dep)):
     )
     timeline = [dict(row) for row in cursor.fetchall()]
 
-    current_payee = get_current_payee(bill_id)
+    current_payee = get_current_payee(bill_id, conn)
     conn.close()
 
     bill_dict["endorsements"] = endorsements
@@ -296,7 +304,7 @@ def bill_void(request: Request, bill_id: int, user=Depends(auth_dep)):
         raise HTTPException(status_code=400, detail="仅有效汇票可作废")
 
     cursor.execute("UPDATE bills SET status = '已作废' WHERE id = ?", (bill_id,))
-    add_timeline(bill_id, "作废", user["real_name"], f"汇票 {bill['bill_no']} 已作废")
+    add_timeline(bill_id, "作废", user["real_name"], f"汇票 {bill['bill_no']} 已作废", conn)
     conn.commit()
     conn.close()
     return RedirectResponse(f"/bills/{bill_id}", status_code=303)
@@ -311,14 +319,16 @@ def endorse_page(request: Request, bill_id: int, user=Depends(auth_dep)):
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM bills WHERE id = ?", (bill_id,))
     bill = cursor.fetchone()
-    conn.close()
 
     if not bill:
+        conn.close()
         raise HTTPException(status_code=404, detail="汇票不存在")
     if bill["status"] != "有效":
+        conn.close()
         raise HTTPException(status_code=400, detail="该汇票不可背书")
 
-    current_payee = get_current_payee(bill_id)
+    current_payee = get_current_payee(bill_id, conn)
+    conn.close()
     return templates.TemplateResponse(
         "endorse.html",
         {
@@ -358,7 +368,7 @@ def endorse_submit(
     if endorse_date <= bill["issue_date"]:
         errors.append(f"背书日期必须晚于签发日期（{bill['issue_date']}）")
 
-    current_payee = get_current_payee(bill_id)
+    current_payee = get_current_payee(bill_id, conn)
     if endorser != current_payee:
         errors.append(f"背书人必须是当前持票人（{current_payee}）")
 
@@ -385,6 +395,7 @@ def endorse_submit(
         "背书",
         user["real_name"],
         f"{endorser} → {endorsee}，背书日期 {endorse_date}",
+        conn,
     )
     conn.commit()
     conn.close()
@@ -400,14 +411,16 @@ def redeem_page(request: Request, bill_id: int, user=Depends(auth_dep)):
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM bills WHERE id = ?", (bill_id,))
     bill = cursor.fetchone()
-    conn.close()
 
     if not bill:
+        conn.close()
         raise HTTPException(status_code=404, detail="汇票不存在")
     if bill["status"] != "有效":
+        conn.close()
         raise HTTPException(status_code=400, detail="该汇票不可兑付")
 
-    current_payee = get_current_payee(bill_id)
+    current_payee = get_current_payee(bill_id, conn)
+    conn.close()
     return templates.TemplateResponse(
         "redeem.html",
         {
@@ -439,7 +452,7 @@ def redeem_submit(
         conn.close()
         raise HTTPException(status_code=404, detail="汇票不存在")
 
-    current_payee = get_current_payee(bill_id)
+    current_payee = get_current_payee(bill_id, conn)
 
     errors = []
     if bill["status"] != "有效":
@@ -478,6 +491,7 @@ def redeem_submit(
             "兑付",
             user["real_name"],
             f"兑付完成，金额 {amount} 两，收款人 {current_payee}",
+            conn,
         )
     else:
         cursor.execute(
@@ -489,6 +503,7 @@ def redeem_submit(
             "兑付申请",
             user["real_name"],
             f"提交兑付申请，金额 {amount} 两，收款人 {current_payee}（高额汇票，待复核）",
+            conn,
         )
 
     conn.commit()
@@ -576,6 +591,7 @@ def review_submit(
             user["real_name"],
             f"复核通过，兑付完成，金额 {redemption['amount']} 两，收款人 {redemption['payee']}"
             + (f"，复核意见：{review_comment}" if review_comment else ""),
+            conn,
         )
     else:
         cursor.execute(
@@ -588,6 +604,7 @@ def review_submit(
             user["real_name"],
             f"复核拒绝，汇票 {redemption['bill_no']} 兑付被驳回"
             + (f"，原因：{review_comment}" if review_comment else ""),
+            conn,
         )
 
     conn.commit()
