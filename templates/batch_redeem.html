@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+
+{% block title %}批量兑付申请 - 传统钱庄汇票协同清算与额度风控系统{% endblock %}
+
+{% block content %}
+<div class="mb-3">
+    <a href="/redemptions" class="text-decoration-none" style="color: var(--qz-secondary);">
+        <i class="bi bi-arrow-left me-1"></i>返回兑付记录
+    </a>
+</div>
+
+<div class="card card-qz mb-4">
+    <div class="card-header">
+        <i class="bi bi-collection me-2"></i>批量兑付申请
+    </div>
+    <div class="card-body">
+        {% if error %}
+        <div class="alert alert-danger">
+            <i class="bi bi-exclamation-triangle me-1"></i>{{ error }}
+        </div>
+        {% endif %}
+
+        <div class="row mb-3">
+            <div class="col-md-6">
+                <label class="form-label fw-bold"><i class="bi bi-info-circle me-1"></i>操作说明</label>
+                <div class="p-3 rounded" style="background: var(--qz-light); font-size: 0.9rem;">
+                    <p class="mb-2">请按以下 JSON 格式填写批量兑付数据：</p>
+<pre style="background: #fff; padding: 10px; border-radius: 5px; margin: 0; overflow-x: auto;">[
+  {
+    "bill_no": "HP20240001",
+    "amount": 5000,
+    "request_date": "2024-06-15"
+  },
+  {
+    "bill_no": "HP20240002",
+    "amount": 3000,
+    "request_date": "2024-06-15"
+  }
+]</pre>
+                    <p class="mt-2 mb-0 text-muted"><i class="bi bi-lightbulb me-1"></i>备注：高额汇票（≥10000两）将自动进入复核流程</p>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <form method="post" id="batchForm">
+                    <div class="mb-3">
+                        <label for="redeem_branch_id" class="form-label fw-bold">
+                            <i class="bi bi-building me-1"></i>兑付分号
+                        </label>
+                        <select class="form-select" id="redeem_branch_id" name="redeem_branch_id">
+                            <option value="">-- 选择分号（默认本人所在分号）--</option>
+                            {% for b in branches %}
+                            <option value="{{ b.id }}">{{ b.branch_name }}（{{ b.branch_code }}）</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="bills_data" class="form-label fw-bold">
+                            <i class="bi bi-code-slash me-1"></i>批量兑付数据（JSON格式）
+                        </label>
+                        <textarea class="form-control" id="bills_data" name="bills_data" rows="10"
+                            placeholder='[{"bill_no":"HP001","amount":1000,"request_date":"2024-01-15"}]' required></textarea>
+                        <div class="form-text">包含票号、兑付金额、申请日期</div>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-outline-secondary" onclick="loadSample()">
+                            <i class="bi bi-file-earmark-code me-1"></i>载入示例
+                        </button>
+                        <button type="button" class="btn btn-outline-success" onclick="addRow()">
+                            <i class="bi bi-plus-circle me-1"></i>添加一行
+                        </button>
+                        <button type="submit" class="btn btn-qz ms-auto" onclick="return validateForm()">
+                            <i class="bi bi-check2-circle me-1"></i>确认批量兑付
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function loadSample() {
+    const sample = [
+        { bill_no: "HP20240001", amount: 5000, request_date: new Date().toISOString().split('T')[0] },
+        { bill_no: "HP20240002", amount: 3000, request_date: new Date().toISOString().split('T')[0] }
+    ];
+    document.getElementById('bills_data').value = JSON.stringify(sample, null, 2);
+}
+
+function addRow() {
+    const ta = document.getElementById('bills_data');
+    let data = [];
+    try {
+        if (ta.value.trim()) data = JSON.parse(ta.value);
+    } catch(e) {
+        alert('当前JSON格式错误，请先修正');
+        return;
+    }
+    data.push({
+        bill_no: "HP2024" + String(data.length + 1).padStart(5, '0'),
+        amount: 1000,
+        request_date: new Date().toISOString().split('T')[0]
+    });
+    ta.value = JSON.stringify(data, null, 2);
+}
+
+function validateForm() {
+    const ta = document.getElementById('bills_data');
+    try {
+        const data = JSON.parse(ta.value);
+        if (!Array.isArray(data) || data.length === 0) {
+            alert('请填写至少一条兑付数据');
+            return false;
+        }
+        if (confirm('确认批量提交 ' + data.length + ' 笔兑付申请？')) {
+            return true;
+        }
+        return false;
+    } catch(e) {
+        alert('JSON格式错误：' + e.message);
+        return false;
+    }
+}
+</script>
+{% endblock %}

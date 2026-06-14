@@ -1,14 +1,26 @@
 {% extends "base.html" %}
 
-{% block title %}总览 - 传统钱庄汇票兑付协作系统{% endblock %}
+{% block title %}总览 - 传统钱庄汇票协同清算与额度风控系统{% endblock %}
 
 {% block content %}
 <div class="mb-4">
     <h4 class="fw-bold" style="color: var(--qz-primary);">
         <i class="bi bi-speedometer2 me-2"></i>钱庄总览
     </h4>
-    <p class="text-muted">{{ user.real_name }}，欢迎回到钱庄汇票兑付协作系统</p>
+    <p class="text-muted">{{ user.real_name }}（{{ user.role }}），欢迎回到传统钱庄汇票协同清算与额度风控系统</p>
 </div>
+
+{% if warnings %}
+<div class="warning-bar">
+    <i class="bi bi-exclamation-triangle me-2"></i>
+    <strong>额度预警：</strong>
+    <ul class="mb-0 mt-1">
+        {% for w in warnings %}
+        <li>{{ w }}</li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
 
 <div class="row g-3 mb-4">
     <div class="col-6 col-md-3">
@@ -35,6 +47,30 @@
             <div class="stat-label"><i class="bi bi-hourglass-split me-1"></i>待复核</div>
         </div>
     </div>
+    <div class="col-6 col-md-3">
+        <div class="stat-card">
+            <div class="stat-number" style="color: #e83e8c;">{{ lost_count }}</div>
+            <div class="stat-label"><i class="bi bi-flag me-1"></i>挂失汇票</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="stat-card">
+            <div class="stat-number" style="color: #17a2b8;">{{ frozen_count }}</div>
+            <div class="stat-label"><i class="bi bi-snow me-1"></i>冻结汇票</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="stat-card">
+            <div class="stat-number" style="color: #6c757d;">{{ voided_count }}</div>
+            <div class="stat-label"><i class="bi bi-x-circle me-1"></i>已作废</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="stat-card">
+            <div class="stat-number" style="color: var(--qz-primary);">{{ pending_clearing }}</div>
+            <div class="stat-label"><i class="bi bi-arrow-left-right me-1"></i>待清算</div>
+        </div>
+    </div>
 </div>
 
 <div class="row g-4">
@@ -52,6 +88,7 @@
                             <tr>
                                 <th>票号</th>
                                 <th>票面金额</th>
+                                <th>签发分号</th>
                                 <th>收款人</th>
                                 <th>签发日期</th>
                                 <th>状态</th>
@@ -63,6 +100,7 @@
                             <tr>
                                 <td><strong>{{ bill.bill_no }}</strong></td>
                                 <td>{{ bill.amount }} 两</td>
+                                <td>{{ bill.issue_branch_name or '—' }}</td>
                                 <td>{{ bill.payee }}</td>
                                 <td>{{ bill.issue_date }}</td>
                                 <td>
@@ -70,6 +108,10 @@
                                     <span class="badge badge-valid">有效</span>
                                     {% elif bill.status == '已兑付' %}
                                     <span class="badge badge-redeemed">已兑付</span>
+                                    {% elif bill.status == '挂失' %}
+                                    <span class="badge badge-lost">挂失</span>
+                                    {% elif bill.status == '冻结' %}
+                                    <span class="badge badge-frozen">冻结</span>
                                     {% else %}
                                     <span class="badge badge-voided">已作废</span>
                                     {% endif %}
@@ -100,21 +142,43 @@
                 <i class="bi bi-lightning me-2"></i>快捷操作
             </div>
             <div class="card-body">
-                {% if user.role in ('掌柜', '票号经办人') %}
+                {% if user.role in ('总号掌柜', '分号掌柜', '票号经办人') %}
                 <a href="/bills/create" class="btn btn-qz w-100 mb-2">
                     <i class="bi bi-plus-circle me-2"></i>签发新汇票
+                </a>
+                <a href="/bills/batch-create" class="btn btn-outline-secondary w-100 mb-2">
+                    <i class="bi bi-collection me-2"></i>批量签发
+                </a>
+                <a href="/redemptions/batch" class="btn btn-outline-primary w-100 mb-2">
+                    <i class="bi bi-cash-coin me-2"></i>批量兑付
                 </a>
                 {% endif %}
                 <a href="/bills" class="btn btn-outline-secondary w-100 mb-2">
                     <i class="bi bi-list-ul me-2"></i>汇票列表
                 </a>
-                {% if user.role == '复核人' %}
-                <a href="/redemptions" class="btn btn-qz w-100 mb-2">
-                    <i class="bi bi-check2-square me-2"></i>审核兑付
+                <a href="/search" class="btn btn-outline-info w-100 mb-2">
+                    <i class="bi bi-search me-2"></i>综合查询
+                </a>
+                {% if user.role in ('总号掌柜', '分号掌柜', '复核人') %}
+                <a href="/redemptions/batch-review" class="btn btn-qz w-100 mb-2">
+                    <i class="bi bi-check2-square me-2"></i>批量复核
+                    {% if pending_review > 0 %}
+                    <span class="badge bg-danger ms-1">{{ pending_review }}</span>
+                    {% endif %}
                 </a>
                 {% endif %}
-                <a href="/redemptions" class="btn btn-outline-secondary w-100">
-                    <i class="bi bi-cash-coin me-2"></i>兑付记录
+                {% if user.role in ('总号掌柜', '分号掌柜') %}
+                <a href="/clearings/create" class="btn btn-outline-secondary w-100 mb-2">
+                    <i class="bi bi-arrow-left-right me-2"></i>登记清算往来
+                </a>
+                {% endif %}
+                {% if user.role in ('总号掌柜', '稽核员') %}
+                <a href="/credit-limits" class="btn btn-outline-secondary w-100 mb-2">
+                    <i class="bi bi-shield-check me-2"></i>额度风控管理
+                </a>
+                {% endif %}
+                <a href="/reports" class="btn btn-outline-secondary w-100">
+                    <i class="bi bi-bar-chart me-2"></i>统计报表
                 </a>
             </div>
         </div>
@@ -125,12 +189,13 @@
             </div>
             <div class="card-body" style="font-size: 0.85rem;">
                 <ul class="list-unstyled mb-0">
-                    <li class="mb-2"><i class="bi bi-1-circle me-1" style="color: var(--qz-secondary);"></i>票号必须唯一</li>
+                    <li class="mb-2"><i class="bi bi-1-circle me-1" style="color: var(--qz-secondary);"></i>票号必须唯一，高额汇票（≥10000两）须复核</li>
                     <li class="mb-2"><i class="bi bi-2-circle me-1" style="color: var(--qz-secondary);"></i>兑付金额不得超票面金额</li>
-                    <li class="mb-2"><i class="bi bi-3-circle me-1" style="color: var(--qz-secondary);"></i>已作废/已兑付汇票不可背书</li>
-                    <li class="mb-2"><i class="bi bi-4-circle me-1" style="color: var(--qz-secondary);"></i>背书日期须晚于签发日期</li>
-                    <li class="mb-2"><i class="bi bi-5-circle me-1" style="color: var(--qz-secondary);"></i>兑付收款人须与末位背书人一致</li>
-                    <li><i class="bi bi-6-circle me-1" style="color: var(--qz-secondary);"></i>高额汇票（≥10000两）须复核</li>
+                    <li class="mb-2"><i class="bi bi-3-circle me-1" style="color: var(--qz-secondary);"></i>已作废/已兑付/挂失/冻结汇票不可背书</li>
+                    <li class="mb-2"><i class="bi bi-4-circle me-1" style="color: var(--qz-secondary);"></i>兑付完成自动生成分号清算记录</li>
+                    <li class="mb-2"><i class="bi bi-5-circle me-1" style="color: var(--qz-secondary);"></i>签发/兑付须符合掌柜/经办人/分号三级额度</li>
+                    <li class="mb-2"><i class="bi bi-6-circle me-1" style="color: var(--qz-secondary);"></i>挂失/冻结汇票可追回恢复，冲正仅限总号掌柜</li>
+                    <li><i class="bi bi-7-circle me-1" style="color: var(--qz-secondary);"></i>清算记录经掌柜清算、总号/稽核对账方完成</li>
                 </ul>
             </div>
         </div>

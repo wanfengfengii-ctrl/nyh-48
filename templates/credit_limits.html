@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+
+{% block title %}额度风控管理 - 传统钱庄汇票协同清算与额度风控系统{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="fw-bold mb-0" style="color: var(--qz-primary);">
+        <i class="bi bi-shield-check me-2"></i>额度风控管理
+    </h4>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-4">
+        <div class="stat-card">
+            <div class="stat-number" style="color: #8B4513;">{{ limits|length }}</div>
+            <div class="stat-label"><i class="bi bi-sliders me-1"></i>额度规则总数</div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="stat-card">
+            <div class="stat-number" style="color: #198754;">
+                {{ limits|selectattr('target_type', 'equalto', '分号')|list|length }}
+            </div>
+            <div class="stat-label"><i class="bi bi-building me-1"></i>分号额度</div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="stat-card">
+            <div class="stat-number" style="color: #0d6efd;">
+                {{ limits|selectattr('target_type', 'equalto', '经办人')|list|length + limits|selectattr('target_type', 'equalto', '掌柜')|list|length }}
+            </div>
+            <div class="stat-label"><i class="bi bi-people me-1"></i>人员额度</div>
+        </div>
+    </div>
+</div>
+
+<div class="mb-3">
+    <div class="btn-group" role="group">
+        <a href="/credit-limits" class="btn btn-outline-secondary active">全部</a>
+        <a href="/credit-limits?type=掌柜" class="btn btn-outline-success">掌柜额度</a>
+        <a href="/credit-limits?type=经办人" class="btn btn-outline-primary">经办人额度</a>
+        <a href="/credit-limits?type=分号" class="btn btn-outline-info">分号额度</a>
+    </div>
+</div>
+
+<div class="card card-qz">
+    <div class="card-body p-0">
+        {% if limits %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead style="background-color: var(--qz-light);">
+                    <tr>
+                        <th style="width: 80px;">类型</th>
+                        <th>对象</th>
+                        <th>单日签发额度（两）</th>
+                        <th>单笔兑付上限（两）</th>
+                        <th>余额预警阈值（两）</th>
+                        <th>创建/更新时间</th>
+                        <th>备注</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for l in limits %}
+                    <tr>
+                        <td>
+                            {% if l.target_type == '掌柜' %}
+                            <span class="badge bg-success">掌柜</span>
+                            {% elif l.target_type == '经办人' %}
+                            <span class="badge bg-primary">经办人</span>
+                            {% else %}
+                            <span class="badge bg-info">分号</span>
+                            {% endif %}
+                        </td>
+                        <td><strong>{{ l.display_name }}</strong></td>
+                        <td>
+                            {% if l.daily_issue_limit > 0 %}
+                            <span class="text-success fw-bold">{{ "%.0f"|format(l.daily_issue_limit) }}</span>
+                            {% else %}
+                            <span class="text-muted">不限</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if l.single_redeem_limit > 0 %}
+                            <span class="text-primary fw-bold">{{ "%.0f"|format(l.single_redeem_limit) }}</span>
+                            {% else %}
+                            <span class="text-muted">不限</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if l.balance_warning > 0 %}
+                            <span class="text-warning fw-bold">{{ "%.0f"|format(l.balance_warning) }}</span>
+                            {% else %}
+                            <span class="text-muted">未设置</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <small>{{ l.updated_at or l.created_at }}</small>
+                        </td>
+                        <td><small>{{ l.remark or '—' }}</small></td>
+                        <td>
+                            {% if user.role == '总号掌柜' %}
+                            <a href="/credit-limits/{{ l.id }}/edit" class="btn btn-sm btn-qz">
+                                <i class="bi bi-pencil me-1"></i>编辑
+                            </a>
+                            {% else %}
+                            <span class="text-muted small">仅总号掌柜可改</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5 text-muted">
+            <i class="bi bi-sliders fs-1 d-block mb-3"></i>
+            <p>暂无额度设置记录</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card card-qz mt-4">
+    <div class="card-header">
+        <i class="bi bi-info-circle me-2"></i>额度规则说明
+    </div>
+    <div class="card-body" style="font-size: 0.9rem;">
+        <div class="row">
+            <div class="col-md-4">
+                <h6 class="fw-bold" style="color: var(--qz-secondary);"><i class="bi bi-1-circle me-1"></i>掌柜额度</h6>
+                <p class="mb-2 text-muted">管辖分号整体单日签发总额度、单笔兑付上限</p>
+            </div>
+            <div class="col-md-4">
+                <h6 class="fw-bold" style="color: var(--qz-secondary);"><i class="bi bi-2-circle me-1"></i>经办人额度</h6>
+                <p class="mb-2 text-muted">个人单日签发总额度、单笔兑付上限</p>
+            </div>
+            <div class="col-md-4">
+                <h6 class="fw-bold" style="color: var(--qz-secondary);"><i class="bi bi-3-circle me-1"></i>分号额度</h6>
+                <p class="mb-2 text-muted">分号整体单日签发总额、余额预警阈值</p>
+            </div>
+        </div>
+        <hr>
+        <p class="text-muted mb-0">
+            <i class="bi bi-lightbulb me-1"></i>
+            <strong>校验优先级：</strong>汇票签发时，依次校验经办人额度、掌柜额度、分号额度；
+            兑付时，校验经办人单笔上限、掌柜单笔上限。任何一项超限即拒绝操作。
+        </p>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+
+{% block title %}编辑额度规则 - 传统钱庄汇票协同清算与额度风控系统{% endblock %}
+
+{% block content %}
+<div class="mb-3">
+    <a href="/credit-limits" class="text-decoration-none" style="color: var(--qz-secondary);">
+        <i class="bi bi-arrow-left me-1"></i>返回额度列表
+    </a>
+</div>
+
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card card-qz">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-pencil me-2"></i>编辑额度规则</span>
+                <span class="badge bg-{{ 'success' if limit.target_type=='掌柜' else ('primary' if limit.target_type=='经办人' else 'info') }}">
+                    {{ limit.target_type }}
+                </span>
+            </div>
+            <div class="card-body">
+                <div class="mb-4 p-3 rounded" style="background: var(--qz-light);">
+                    <h6 class="fw-bold mb-2" style="color: var(--qz-primary);"><i class="bi bi-person me-1"></i>额度对象信息</h6>
+                    <table class="table table-sm table-borderless mb-0">
+                        <tr>
+                            <th style="width: 100px;">规则类型：</th>
+                            <td>{{ limit.target_type }}额度规则</td>
+                        </tr>
+                        <tr>
+                            <th>创建时间：</th>
+                            <td>{{ limit.created_at }}</td>
+                        </tr>
+                        {% if limit.remark %}
+                        <tr>
+                            <th>原备注：</th>
+                            <td>{{ limit.remark }}</td>
+                        </tr>
+                        {% endif %}
+                    </table>
+                </div>
+
+                <form method="post">
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-4">
+                            <label for="daily_issue_limit" class="form-label fw-bold">
+                                <i class="bi bi-file-earmark-plus me-1"></i>单日签发额度（两）
+                            </label>
+                            <input type="number" class="form-control form-control-lg" id="daily_issue_limit" name="daily_issue_limit"
+                                step="0.01" min="0" required value="{{ limit.daily_issue_limit }}"
+                                style="border-color: #198754;">
+                            <div class="form-text text-success">设为 0 表示不限制</div>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="single_redeem_limit" class="form-label fw-bold">
+                                <i class="bi bi-cash-coin me-1"></i>单笔兑付上限（两）
+                            </label>
+                            <input type="number" class="form-control form-control-lg" id="single_redeem_limit" name="single_redeem_limit"
+                                step="0.01" min="0" required value="{{ limit.single_redeem_limit }}"
+                                style="border-color: #0d6efd;">
+                            <div class="form-text text-primary">设为 0 表示不限制</div>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="balance_warning" class="form-label fw-bold">
+                                <i class="bi bi-exclamation-triangle me-1"></i>余额预警阈值（两）
+                            </label>
+                            <input type="number" class="form-control form-control-lg" id="balance_warning" name="balance_warning"
+                                step="0.01" min="0" required value="{{ limit.balance_warning }}"
+                                style="border-color: #ffc107;">
+                            <div class="form-text text-warning">设为 0 表示不启用预警</div>
+                        </div>
+                    </div>
+
+                    <div class="alert alert-light border" role="alert">
+                        <h6 class="fw-bold" style="color: var(--qz-secondary);"><i class="bi bi-lightbulb me-1"></i>设置建议</h6>
+                        <ul class="mb-0" style="font-size: 0.85rem;">
+                            <li>掌柜/分号额度建议设置较高，控制整体业务规模</li>
+                            <li>经办人额度建议设置适中，防止单人操作风险</li>
+                            <li>兑付上限建议与汇票业务平均额度匹配</li>
+                            <li>预警阈值建议设置为额度的 80% 左右，提前预警</li>
+                        </ul>
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-qz">
+                            <i class="bi bi-save me-1"></i>保存修改
+                        </button>
+                        <a href="/credit-limits" class="btn btn-outline-secondary">
+                            <i class="bi bi-x-circle me-1"></i>取消
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

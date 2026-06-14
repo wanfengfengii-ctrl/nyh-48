@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+
+{% block title %}{{ action }}结果 - 传统钱庄汇票协同清算与额度风控系统{% endblock %}
+
+{% block content %}
+<div class="mb-3">
+    <a href="javascript:history.back()" class="text-decoration-none" style="color: var(--qz-secondary);">
+        <i class="bi bi-arrow-left me-1"></i>返回
+    </a>
+</div>
+
+<div class="card card-qz mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-clipboard-check me-2"></i>{{ action }}结果汇总</span>
+        <span class="badge bg-info">
+            成功：{{ results|length }} 笔
+            {% if errors %}| 失败：{{ errors|length }} 笔{% endif %}
+        </span>
+    </div>
+    <div class="card-body">
+        {% if results %}
+        <div class="alert alert-success">
+            <h6 class="fw-bold"><i class="bi bi-check-circle me-1"></i>成功记录（{{ results|length }} 笔）</h6>
+            <div class="table-responsive mt-2">
+                <table class="table table-sm table-hover">
+                    <thead>
+                        <tr><th style="width: 60px;">序号</th><th>详情</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for r in results %}
+                        <tr><td>{{ loop.index }}</td><td class="text-success">{{ r }}</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if errors %}
+        <div class="alert alert-danger">
+            <h6 class="fw-bold"><i class="bi bi-exclamation-triangle me-1"></i>失败记录（{{ errors|length }} 笔）</h6>
+            <div class="table-responsive mt-2">
+                <table class="table table-sm table-hover">
+                    <thead>
+                        <tr><th style="width: 60px;">序号</th><th>详情</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for e in errors %}
+                        <tr><td>{{ loop.index }}</td><td class="text-danger">{{ e }}</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="d-flex gap-2">
+    {% if action == '批量签发' %}
+    <a href="/bills" class="btn btn-qz"><i class="bi bi-list-ul me-1"></i>查看汇票列表</a>
+    <a href="/bills/batch-create" class="btn btn-outline-secondary"><i class="bi bi-arrow-repeat me-1"></i>继续{{ action }}</a>
+    {% elif action == '批量兑付' %}
+    <a href="/redemptions" class="btn btn-qz"><i class="bi bi-list-ul me-1"></i>查看兑付记录</a>
+    <a href="/redemptions/batch" class="btn btn-outline-secondary"><i class="bi bi-arrow-repeat me-1"></i>继续{{ action }}</a>
+    {% elif action == '批量复核' %}
+    <a href="/redemptions" class="btn btn-qz"><i class="bi bi-list-ul me-1"></i>查看兑付记录</a>
+    <a href="/redemptions/batch-review" class="btn btn-outline-secondary"><i class="bi bi-arrow-repeat me-1"></i>继续{{ action }}</a>
+    {% else %}
+    <a href="/dashboard" class="btn btn-qz"><i class="bi bi-speedometer2 me-1"></i>返回总览</a>
+    {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+
+{% block title %}登记清算往来 - 传统钱庄汇票协同清算与额度风控系统{% endblock %}
+
+{% block content %}
+<div class="mb-3">
+    <a href="/clearings" class="text-decoration-none" style="color: var(--qz-secondary);">
+        <i class="bi bi-arrow-left me-1"></i>返回清算记录
+    </a>
+</div>
+
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card card-qz">
+            <div class="card-header">
+                <i class="bi bi-plus-circle me-2"></i>登记分号清算往来
+            </div>
+            <div class="card-body">
+                {% if errors %}
+                <div class="alert alert-danger">
+                    <i class="bi bi-exclamation-triangle me-1"></i>
+                    <ul class="mb-0">
+                        {% for e in errors %}
+                        <li>{{ e }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+
+                <form method="post">
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label for="from_branch_id" class="form-label fw-bold">
+                                <i class="bi bi-building-dash me-1"></i>发起分号（出款方）
+                            </label>
+                            <select class="form-select" id="from_branch_id" name="from_branch_id" required>
+                                <option value="">-- 请选择发起分号 --</option>
+                                {% for b in branches %}
+                                <option value="{{ b.id }}" {% if form and form.from_branch_id|int == b.id %}selected{% endif %}>
+                                    {{ b.branch_name }}（{{ b.branch_code }}）
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="to_branch_id" class="form-label fw-bold">
+                                <i class="bi bi-building-add me-1"></i>收款分号（入款方）
+                            </label>
+                            <select class="form-select" id="to_branch_id" name="to_branch_id" required>
+                                <option value="">-- 请选择收款分号 --</option>
+                                {% for b in branches %}
+                                <option value="{{ b.id }}" {% if form and form.to_branch_id|int == b.id %}selected{% endif %}>
+                                    {{ b.branch_name }}（{{ b.branch_code }}）
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label for="amount" class="form-label fw-bold">
+                                <i class="bi bi-coins me-1"></i>清算金额（两）
+                            </label>
+                            <input type="number" class="form-control" id="amount" name="amount" 
+                                step="0.01" min="0.01" required
+                                value="{{ form.amount if form else '' }}"
+                                placeholder="请输入清算金额">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="clearing_date" class="form-label fw-bold">
+                                <i class="bi bi-calendar-date me-1"></i>清算日期
+                            </label>
+                            <input type="date" class="form-control" id="clearing_date" name="clearing_date" required
+                                value="{{ form.clearing_date if form else '' }}">
+                        </div>
+                    </div>
+
+                    <div class="mb-4">
+                        <label for="remark" class="form-label fw-bold">
+                            <i class="bi bi-journal-text me-1"></i>往来事由/备注
+                        </label>
+                        <textarea class="form-control" id="remark" name="remark" rows="3"
+                            placeholder="请填写往来事由，如：季度结算、货款往来等">{{ form.remark if form else '' }}</textarea>
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-qz">
+                            <i class="bi bi-check2-circle me-1"></i>确认登记
+                        </button>
+                        <a href="/clearings" class="btn btn-outline-secondary">
+                            <i class="bi bi-x-circle me-1"></i>取消
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="card card-qz mt-4">
+            <div class="card-header">
+                <i class="bi bi-info-circle me-2"></i>业务规则说明
+            </div>
+            <div class="card-body" style="font-size: 0.9rem;">
+                <ul class="mb-0">
+                    <li class="mb-2">清算往来用于登记分号之间非汇票兑付产生的资金往来，如季度结算、借款还款等。</li>
+                    <li class="mb-2">汇票兑付完成后，系统将自动生成兑付清算记录，无需手动登记。</li>
+                    <li class="mb-2">清算记录创建后，由掌柜执行清算操作，总号掌柜或稽核员执行对账操作。</li>
+                    <li class="mb-2">发起分号为资金出款方，收款分号为资金入款方，双方分号不能相同。</li>
+                    <li>清算往来记录将作为分号对账和稽核的重要依据，请谨慎填写。</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

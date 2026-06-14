@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+
+{% block title %}业务统计报表 - 传统钱庄汇票协同清算与额度风控系统{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="fw-bold mb-0" style="color: var(--qz-primary);">
+        <i class="bi bi-bar-chart me-2"></i>业务统计报表
+    </h4>
+</div>
+
+<div class="card card-qz mb-4">
+    <div class="card-header">
+        <i class="bi bi-funnel me-2"></i>报表参数
+    </div>
+    <div class="card-body">
+        <form method="post" class="row g-3 align-items-end">
+            <div class="col-md-3">
+                <label for="report_type" class="form-label fw-bold"><i class="bi bi-calendar-event me-1"></i>报表类型</label>
+                <select class="form-select form-select-lg" id="report_type" name="report_type">
+                    <option value="daily" {% if report_data and report_data.type == '日' %}selected{% endif %}>日报表</option>
+                    <option value="monthly" {% if report_data and report_data.type == '月' %}selected{% endif %}>月报表</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label for="start_date" class="form-label fw-bold"><i class="bi bi-calendar-date me-1"></i>起始日期</label>
+                <input type="date" class="form-control form-select-lg" id="start_date" name="start_date" required
+                    value="{{ report_data.start_date if report_data else '' }}">
+            </div>
+            <div class="col-md-3">
+                <label for="end_date" class="form-label fw-bold"><i class="bi bi-calendar-date me-1"></i>结束日期</label>
+                <input type="date" class="form-control form-select-lg" id="end_date" name="end_date" required
+                    value="{{ report_data.end_date if report_data else '' }}">
+            </div>
+            <div class="col-md-3">
+                <button type="submit" class="btn btn-qz w-100 btn-lg">
+                    <i class="bi bi-file-earmark-bar-graph me-1"></i>生成报表
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% if report_data %}
+<div class="card card-qz mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-bar-chart-line me-2"></i>{{ report_data.type }}报表：{{ report_data.start_date }} ~ {{ report_data.end_date }}</span>
+        <button type="button" class="btn btn-sm btn-outline-light" onclick="window.print()">
+            <i class="bi bi-printer me-1"></i>打印
+        </button>
+    </div>
+    <div class="card-body">
+        <div class="row g-3 mb-4">
+            <div class="col-md-3">
+                <div class="stat-card">
+                    <div class="stat-number">{{ report_data.issue_count }}</div>
+                    <div class="stat-label"><i class="bi bi-file-earmark-plus me-1"></i>签发笔数</div>
+                    <div class="mt-1 fw-bold" style="color: var(--qz-primary);">{{ "%.0f"|format(report_data.issue_total) }} 两</div>
+                    <div class="text-muted small">签发总额</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-card">
+                    <div class="stat-number" style="color: #0d6efd;">{{ report_data.redeem_count }}</div>
+                    <div class="stat-label"><i class="bi bi-cash-coin me-1"></i>兑付笔数</div>
+                    <div class="mt-1 fw-bold text-primary">{{ "%.0f"|format(report_data.redeem_total) }} 两</div>
+                    <div class="text-muted small">兑付总额</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-card">
+                    <div class="stat-number" style="color: #198754;">{{ report_data.active_count }}</div>
+                    <div class="stat-label"><i class="bi bi-check-circle me-1"></i>当前有效汇票</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-card">
+                    <div class="stat-number" style="color: #dc3545;">{{ report_data.exception_count }}</div>
+                    <div class="stat-label"><i class="bi bi-exclamation-triangle me-1"></i>异常汇票</div>
+                    <div class="mt-1 fw-bold" style="color: #fd7e14;">{{ "%.0f"|format(report_data.clearing_total) }} 两</div>
+                    <div class="text-muted small">已清算总额</div>
+                </div>
+            </div>
+        </div>
+
+        {% if report_data.branch_stats %}
+        <div class="row g-4 mb-4">
+            <div class="col-md-6">
+                <div class="card card-qz">
+                    <div class="card-header">
+                        <i class="bi bi-building me-2"></i>分号签发统计
+                    </div>
+                    <div class="card-body p-0">
+                        <table class="table table-hover mb-0">
+                            <thead style="background-color: var(--qz-light);">
+                                <tr><th>分号</th><th>签发笔数</th><th>签发金额（两）</th><th>占比</th></tr>
+                            </thead>
+                            <tbody>
+                                {% for bs in report_data.branch_stats %}
+                                <tr>
+                                    <td><strong>{{ bs.branch_name or '未指定' }}</strong></td>
+                                    <td>{{ bs.cnt }}</td>
+                                    <td>{{ "%.0f"|format(bs.total) }}</td>
+                                    <td>
+                                        <div class="progress" style="height: 20px;">
+                                            {% set pct = (bs.total / report_data.issue_total * 100) if report_data.issue_total > 0 else 0 %}
+                                            <div class="progress-bar" style="width: {{ pct }}%; background: var(--qz-secondary);">
+                                                {{ "%.1f"|format(pct) }}%
+                                            </div>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-6">
+                <div class="card card-qz">
+                    <div class="card-header">
+                        <i class="bi bi-people me-2"></i>经办人签发统计
+                    </div>
+                    <div class="card-body p-0">
+                        <table class="table table-hover mb-0">
+                            <thead style="background-color: var(--qz-light);">
+                                <tr><th>经办人</th><th>签发笔数</th><th>签发金额（两）</th><th>占比</th></tr>
+                            </thead>
+                            <tbody>
+                                {% for os in report_data.operator_stats %}
+                                <tr>
+                                    <td><strong>{{ os.real_name or '未知' }}</strong></td>
+                                    <td>{{ os.cnt }}</td>
+                                    <td>{{ "%.0f"|format(os.total) }}</td>
+                                    <td>
+                                        <div class="progress" style="height: 20px;">
+                                            {% set pct = (os.total / report_data.issue_total * 100) if report_data.issue_total > 0 else 0 %}
+                                            <div class="progress-bar bg-primary" style="width: {{ pct }}%;">
+                                                {{ "%.1f"|format(pct) }}%
+                                            </div>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="card card-qz">
+            <div class="card-header">
+                <i class="bi bi-info-circle me-2"></i>报表摘要
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4">
+                        <h6 class="fw-bold" style="color: var(--qz-secondary);">签发统计</h6>
+                        <p class="mb-2">本时段共签发汇票 <strong class="text-success">{{ report_data.issue_count }}</strong> 笔</p>
+                        <p class="mb-0">总金额 <strong style="color: var(--qz-primary);">{{ "%.2f"|format(report_data.issue_total) }}</strong> 两</p>
+                    </div>
+                    <div class="col-md-4">
+                        <h6 class="fw-bold" style="color: var(--qz-secondary);">兑付统计</h6>
+                        <p class="mb-2">本时段共兑付汇票 <strong class="text-primary">{{ report_data.redeem_count }}</strong> 笔</p>
+                        <p class="mb-0">兑付总金额 <strong class="text-primary">{{ "%.2f"|format(report_data.redeem_total) }}</strong> 两</p>
+                    </div>
+                    <div class="col-md-4">
+                        <h6 class="fw-bold" style="color: var(--qz-secondary);">风控与清算</h6>
+                        <p class="mb-2">异常汇票 <strong class="text-danger">{{ report_data.exception_count }}</strong> 笔（挂失+冻结）</p>
+                        <p class="mb-0">清算总额 <strong style="color: #fd7e14;">{{ "%.2f"|format(report_data.clearing_total) }}</strong> 两</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="card card-qz">
+    <div class="card-body text-center py-5">
+        <i class="bi bi-bar-chart fs-1 d-block mb-3" style="color: var(--qz-accent);"></i>
+        <p class="text-muted mb-0">请选择报表类型和日期区间，点击"生成报表"查看统计数据</p>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+
+{% block title %}批量复核兑付 - 传统钱庄汇票协同清算与额度风控系统{% endblock %}
+
+{% block content %}
+<div class="mb-3">
+    <a href="/redemptions" class="text-decoration-none" style="color: var(--qz-secondary);">
+        <i class="bi bi-arrow-left me-1"></i>返回兑付记录
+    </a>
+</div>
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="fw-bold mb-0" style="color: var(--qz-primary);">
+        <i class="bi bi-check2-square me-2"></i>批量复核兑付申请
+    </h4>
+    <div>
+        <span class="badge bg-warning fs-6 me-2">待复核：{{ pending|length }} 笔</span>
+        <button type="button" class="btn btn-outline-success btn-sm" onclick="selectAll(true)">
+            <i class="bi bi-check-all me-1"></i>全选通过
+        </button>
+        <button type="button" class="btn btn-outline-danger btn-sm" onclick="selectAll(false)">
+            <i class="bi bi-x-circle me-1"></i>全选拒绝
+        </button>
+    </div>
+</div>
+
+{% if not pending %}
+<div class="card card-qz">
+    <div class="card-body text-center py-5">
+        <i class="bi bi-check2-circle fs-1 d-block mb-3 text-success"></i>
+        <p class="text-muted mb-0">暂无待复核的兑付申请</p>
+    </div>
+</div>
+{% else %}
+<form method="post" id="reviewForm">
+    <input type="hidden" name="review_data" id="review_data">
+    <div class="card card-qz">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead style="background-color: var(--qz-light);">
+                        <tr>
+                            <th style="width: 80px;">复核操作</th>
+                            <th>票号</th>
+                            <th>票面金额</th>
+                            <th>兑付金额</th>
+                            <th>收款人</th>
+                            <th>申请日期</th>
+                            <th>经办人</th>
+                            <th>兑付分号</th>
+                            <th style="width: 200px;">复核意见</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in pending %}
+                        <tr data-id="{{ r.id }}">
+                            <td>
+                                <div class="d-flex gap-1">
+                                    <div class="form-check">
+                                        <input class="form-check-input action-approve" type="checkbox" 
+                                            data-id="{{ r.id }}" id="approve_{{ r.id }}" onchange="handleCheck({{ r.id }}, 'approve')">
+                                        <label class="form-check-label badge badge-approved" for="approve_{{ r.id }}">通过</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input action-reject" type="checkbox" 
+                                            data-id="{{ r.id }}" id="reject_{{ r.id }}" onchange="handleCheck({{ r.id }}, 'reject')">
+                                        <label class="form-check-label badge badge-rejected" for="reject_{{ r.id }}">拒绝</label>
+                                    </div>
+                                </div>
+                            </td>
+                            <td><strong>{{ r.bill_no }}</strong></td>
+                            <td>{{ r.bill_amount }} 两</td>
+                            <td><strong style="color: var(--qz-primary);">{{ r.amount }} 两</strong></td>
+                            <td>{{ r.payee }}</td>
+                            <td>{{ r.request_date }}</td>
+                            <td>{{ r.operator_name }}</td>
+                            <td>{{ r.redeem_branch_name }}</td>
+                            <td>
+                                <input type="text" class="form-control form-control-sm comment-input" 
+                                    data-id="{{ r.id }}" placeholder="可选，填写意见">
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <div class="mt-3 d-flex justify-content-between align-items-center">
+        <div class="text-muted">
+            <span id="selectedCount">已选择 0 笔</span>（通过：<span id="approveCount">0</span>，拒绝：<span id="rejectCount">0</span>）
+        </div>
+        <button type="submit" class="btn btn-qz" onclick="return submitReview()">
+            <i class="bi bi-check2-circle me-1"></i>提交批量复核
+        </button>
+    </div>
+</form>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const reviewStates = {};
+
+function handleCheck(id, action) {
+    const approveCb = document.getElementById('approve_' + id);
+    const rejectCb = document.getElementById('reject_' + id);
+    if (action === 'approve' && approveCb.checked) {
+        rejectCb.checked = false;
+        reviewStates[id] = 'approve';
+    } else if (action === 'reject' && rejectCb.checked) {
+        approveCb.checked = false;
+        reviewStates[id] = 'reject';
+    } else if (!approveCb.checked && !rejectCb.checked) {
+        delete reviewStates[id];
+    }
+    updateCounts();
+}
+
+function updateCounts() {
+    let approve = 0, reject = 0;
+    for (const k in reviewStates) {
+        if (reviewStates[k] === 'approve') approve++;
+        else if (reviewStates[k] === 'reject') reject++;
+    }
+    document.getElementById('selectedCount').textContent = '已选择 ' + (approve + reject) + ' 笔';
+    document.getElementById('approveCount').textContent = approve;
+    document.getElementById('rejectCount').textContent = reject;
+}
+
+function selectAll(approve) {
+    const action = approve ? 'approve' : 'reject';
+    {% for r in pending %}
+    (function() {
+        const id = {{ r.id }};
+        document.getElementById(action + '_' + id).checked = true;
+        document.getElementById((approve ? 'reject' : 'approve') + '_' + id).checked = false;
+        reviewStates[id] = action;
+    })();
+    {% endfor %}
+    updateCounts();
+}
+
+function submitReview() {
+    const data = [];
+    for (const id in reviewStates) {
+        const commentInput = document.querySelector('.comment-input[data-id="' + id + '"]');
+        data.push({
+            id: parseInt(id),
+            action: reviewStates[id],
+            comment: commentInput ? commentInput.value : ''
+        });
+    }
+    if (data.length === 0) {
+        alert('请至少选择一笔进行复核');
+        return false;
+    }
+    if (!confirm('确认提交 ' + data.length + ' 笔复核？此操作不可撤销！')) {
+        return false;
+    }
+    document.getElementById('review_data').value = JSON.stringify(data);
+    return true;
+}
+</script>
+{% endblock %}

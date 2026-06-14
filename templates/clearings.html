@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+
+{% block title %}清算管理 - 传统钱庄汇票协同清算与额度风控系统{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="fw-bold mb-0" style="color: var(--qz-primary);">
+        <i class="bi bi-arrow-left-right me-2"></i>分号清算往来
+    </h4>
+    {% if user.role in ('总号掌柜', '分号掌柜') %}
+    <a href="/clearings/create" class="btn btn-qz">
+        <i class="bi bi-plus-circle me-2"></i>登记清算往来
+    </a>
+    {% endif %}
+</div>
+
+{% if warnings %}
+<div class="warning-bar">
+    <i class="bi bi-exclamation-triangle me-2"></i>
+    <strong>额度预警：</strong>
+    <ul class="mb-0 mt-1">
+        {% for w in warnings %}
+        <li>{{ w }}</li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+        <div class="stat-card">
+            <div class="stat-number" style="color: #fd7e14;">{{ pending_clearing if pending_clearing is defined else clearings|selectattr('status', 'equalto', '待清算')|list|length }}</div>
+            <div class="stat-label"><i class="bi bi-hourglass-split me-1"></i>待清算</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="stat-card">
+            <div class="stat-number" style="color: #198754;">{{ clearings|selectattr('status', 'equalto', '已清算')|list|length }}</div>
+            <div class="stat-label"><i class="bi bi-check-circle me-1"></i>已清算</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="stat-card">
+            <div class="stat-number" style="color: #0d6efd;">{{ clearings|selectattr('status', 'equalto', '已对账')|list|length }}</div>
+            <div class="stat-label"><i class="bi bi-journal-check me-1"></i>已对账</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="stat-card">
+            <div class="stat-number" style="color: var(--qz-primary);">
+                {% set ns = namespace(total=0) %}
+                {% for c in clearings %}
+                {% if c.status in ('已清算', '已对账') %}
+                {% set ns.total = ns.total + c.amount %}
+                {% endif %}
+                {% endfor %}
+                {{ "%.0f"|format(ns.total) }}
+            </div>
+            <div class="stat-label"><i class="bi bi-coins me-1"></i>已清算总额（两）</div>
+        </div>
+    </div>
+</div>
+
+<div class="mb-3">
+    <div class="btn-group" role="group">
+        <a href="/clearings" class="btn btn-outline-secondary active">全部</a>
+        <a href="/clearings?type=兑付清算" class="btn btn-outline-primary">兑付清算</a>
+        <a href="/clearings?type=往来登记" class="btn btn-outline-info">往来登记</a>
+    </div>
+</div>
+
+<div class="card card-qz">
+    <div class="card-body p-0">
+        {% if clearings %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead style="background-color: var(--qz-light);">
+                    <tr>
+                        <th>类型</th>
+                        <th>发起分号 → 收款分号</th>
+                        <th>关联票号</th>
+                        <th>金额（两）</th>
+                        <th>清算日期</th>
+                        <th>经办人</th>
+                        <th>状态</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for c in clearings %}
+                    <tr>
+                        <td>
+                            {% if c.clearing_type == '兑付清算' %}
+                            <span class="badge bg-primary">兑付清算</span>
+                            {% else %}
+                            <span class="badge bg-info">往来登记</span>
+                            {% endif %}
+                        </td>
+                        <td><strong>{{ c.from_branch_name }}</strong> → <strong>{{ c.to_branch_name }}</strong></td>
+                        <td>
+                            {% if c.bill_no %}
+                            <a href="/bills/{{ c.bill_id }}" class="text-decoration-none">{{ c.bill_no }}</a>
+                            {% else %}
+                            <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <td><strong style="color: var(--qz-primary);">{{ c.amount }} 两</strong></td>
+                        <td>{{ c.clearing_date }}</td>
+                        <td>{{ c.operator_name }}</td>
+                        <td>
+                            {% if c.status == '待清算' %}
+                            <span class="badge badge-pending">待清算</span>
+                            {% elif c.status == '已清算' %}
+                            <span class="badge badge-settled">已清算</span>
+                            {% else %}
+                            <span class="badge badge-reconciled">已对账</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if c.status == '待清算' and user.role in ('总号掌柜', '分号掌柜') %}
+                            <form method="post" action="/clearings/{{ c.id }}/settle" class="d-inline">
+                                <button type="submit" class="btn btn-sm btn-success" onclick="return confirm('确认完成此笔清算？')">
+                                    <i class="bi bi-check me-1"></i>清算
+                                </button>
+                            </form>
+                            {% endif %}
+                            {% if c.status == '已清算' and user.role in ('总号掌柜', '稽核员') %}
+                            <form method="post" action="/clearings/{{ c.id }}/reconcile" class="d-inline">
+                                <button type="submit" class="btn btn-sm btn-primary" onclick="return confirm('确认完成此笔对账？')">
+                                    <i class="bi bi-journal-check me-1"></i>对账
+                                </button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5 text-muted">
+            <i class="bi bi-inbox fs-1 d-block mb-3"></i>
+            <p>暂无清算记录</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

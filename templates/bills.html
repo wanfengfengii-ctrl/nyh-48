@@ -1,16 +1,21 @@
 {% extends "base.html" %}
 
-{% block title %}汇票管理 - 传统钱庄汇票兑付协作系统{% endblock %}
+{% block title %}汇票管理 - 传统钱庄汇票协同清算与额度风控系统{% endblock %}
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h4 class="fw-bold mb-0" style="color: var(--qz-primary);">
         <i class="bi bi-file-earmark-text me-2"></i>汇票管理
     </h4>
-    {% if user.role in ('掌柜', '票号经办人') %}
-    <a href="/bills/create" class="btn btn-qz">
-        <i class="bi bi-plus-circle me-2"></i>签发汇票
-    </a>
+    {% if user.role in ('总号掌柜', '分号掌柜', '票号经办人') %}
+    <div class="d-flex gap-2">
+        <a href="/bills/batch-create" class="btn btn-outline-secondary">
+            <i class="bi bi-collection me-1"></i>批量签发
+        </a>
+        <a href="/bills/create" class="btn btn-qz">
+            <i class="bi bi-plus-circle me-2"></i>签发汇票
+        </a>
+    </div>
     {% endif %}
 </div>
 
@@ -24,6 +29,12 @@
         </a>
         <a href="/bills?status=已兑付" class="btn btn-outline-primary {% if current_status == '已兑付' %}active{% endif %}">
             已兑付
+        </a>
+        <a href="/bills?status=挂失" class="btn btn-outline-pink {% if current_status == '挂失' %}active{% endif %}" style="border-color: #e83e8c; color: #e83e8c;">
+            挂失
+        </a>
+        <a href="/bills?status=冻结" class="btn btn-outline-info {% if current_status == '冻结' %}active{% endif %}">
+            冻结
         </a>
         <a href="/bills?status=已作废" class="btn btn-outline-secondary {% if current_status == '已作废' %}active{% endif %}">
             已作废
@@ -41,6 +52,7 @@
                         <th>票号</th>
                         <th>票面金额</th>
                         <th>签发人</th>
+                        <th>签发分号</th>
                         <th>收款人</th>
                         <th>签发日期</th>
                         <th>到期日期</th>
@@ -52,8 +64,14 @@
                     {% for bill in bills %}
                     <tr>
                         <td><strong>{{ bill.bill_no }}</strong></td>
-                        <td>{{ bill.amount }} 两</td>
+                        <td>
+                            {{ bill.amount }} 两
+                            {% if bill.amount >= 10000 %}
+                            <span class="badge bg-danger ms-1">高额</span>
+                            {% endif %}
+                        </td>
                         <td>{{ bill.issuer_name }}</td>
+                        <td>{{ bill.issue_branch_name or '—' }}</td>
                         <td>{{ bill.payee }}</td>
                         <td>{{ bill.issue_date }}</td>
                         <td>{{ bill.due_date or '—' }}</td>
@@ -62,6 +80,10 @@
                             <span class="badge badge-valid">有效</span>
                             {% elif bill.status == '已兑付' %}
                             <span class="badge badge-redeemed">已兑付</span>
+                            {% elif bill.status == '挂失' %}
+                            <span class="badge badge-lost">挂失</span>
+                            {% elif bill.status == '冻结' %}
+                            <span class="badge badge-frozen">冻结</span>
                             {% else %}
                             <span class="badge badge-voided">已作废</span>
                             {% endif %}
@@ -80,7 +102,7 @@
         <div class="text-center py-5 text-muted">
             <i class="bi bi-inbox fs-1 d-block mb-3"></i>
             <p>暂无汇票记录</p>
-            {% if user.role in ('掌柜', '票号经办人') %}
+            {% if user.role in ('总号掌柜', '分号掌柜', '票号经办人') %}
             <a href="/bills/create" class="btn btn-qz"><i class="bi bi-plus-circle me-1"></i>签发第一张汇票</a>
             {% endif %}
         </div>
