@@ -220,24 +220,32 @@
                             {% if user.role in ('总号掌柜', '分号掌柜', '票号经办人') %}
                             <li><a class="dropdown-item" href="/finance/loans/apply"><i class="bi bi-plus-circle me-1"></i>申请押汇</a></li>
                             {% endif %}
+                            <li><a class="dropdown-item" href="/loan-extensions"><i class="bi bi-calendar-plus me-1"></i>融资展期</a></li>
                             <li><hr class="dropdown-divider"></li>
                             {% if user.role in ('总号掌柜', '分号掌柜', '稽核员') %}
                             <li><a class="dropdown-item" href="/customer-credits"><i class="bi bi-people me-1"></i>客户授信</a></li>
                             {% endif %}
                             <li><a class="dropdown-item" href="/interest-accruals"><i class="bi bi-calculator me-1"></i>利息计提</a></li>
                             <li><a class="dropdown-item" href="/collections"><i class="bi bi-bell me-1"></i>催收追偿</a></li>
+                            <li><a class="dropdown-item" href="/batch-collections"><i class="bi bi-bells me-1"></i>批量催收</a></li>
+                            <li><a class="dropdown-item" href="/partial-writeoffs"><i class="bi bi-scissors me-1"></i>部分核销</a></li>
                         </ul>
                     </li>
-                    {% if user.role in ('总号掌柜', '稽核员') %}
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
                             <i class="bi bi-shield-check me-1"></i>风控管理
                         </a>
                         <ul class="dropdown-menu dropdown-menu-qz">
+                            {% if user.role in ('总号掌柜', '稽核员') %}
                             <li><a class="dropdown-item" href="/credit-limits"><i class="bi bi-sliders me-1"></i>额度设置</a></li>
+                            <li><a class="dropdown-item" href="/approval-chains"><i class="bi bi-diagram-3 me-1"></i>审批链配置</a></li>
+                            {% endif %}
+                            <li><a class="dropdown-item" href="/overdue-warnings"><i class="bi bi-exclamation-triangle me-1"></i>逾期预警</a></li>
+                            <li><a class="dropdown-item" href="/risk-ratings"><i class="bi bi-star me-1"></i>客户风险评级</a></li>
+                            <li><a class="dropdown-item" href="/branch-monitor"><i class="bi bi-building me-1"></i>分号融资监控</a></li>
+                            <li><a class="dropdown-item" href="/audit-logs"><i class="bi bi-journal-text me-1"></i>审批留痕审计</a></li>
                         </ul>
                     </li>
-                    {% endif %}
                     <li class="nav-item">
                         <a class="nav-link" href="/reports"><i class="bi bi-bar-chart me-1"></i>统计报表</a>
                     </li>

@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+
+{% block title %}融资展期 - 传统钱庄汇票协同清算与额度风控系统{% endblock %}
+
+{% block extra_css %}
+<style>
+    .badge-pending { background-color: #fd7e14; }
+    .badge-info { background-color: #0dcaf0; color: #000; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="fw-bold mb-0" style="color: var(--qz-primary);">
+        <i class="bi bi-calendar-plus me-2"></i>融资展期
+    </h4>
+</div>
+
+<div class="mb-3">
+    <div class="btn-group flex-wrap" role="group">
+        <a href="/loan-extensions" class="btn btn-outline-secondary {% if not current_status %}active{% endif %}">
+            全部
+        </a>
+        <a href="/loan-extensions?status=待审核" class="btn btn-outline-warning {% if current_status == '待审核' %}active{% endif %}">
+            待审核
+        </a>
+        <a href="/loan-extensions?status=已复核" class="btn btn-outline-info {% if current_status == '已复核' %}active{% endif %}">
+            已复核
+        </a>
+        <a href="/loan-extensions?status=已批准" class="btn btn-outline-success {% if current_status == '已批准' %}active{% endif %}">
+            已批准
+        </a>
+        <a href="/loan-extensions?status=已拒绝" class="btn btn-outline-danger {% if current_status == '已拒绝' %}active{% endif %}">
+            已拒绝
+        </a>
+    </div>
+</div>
+
+<div class="card card-qz">
+    <div class="card-body p-0">
+        {% if extensions %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead style="background-color: var(--qz-light);">
+                    <tr>
+                        <th>票号</th>
+                        <th>客户</th>
+                        <th>原到期日</th>
+                        <th>新到期日</th>
+                        <th>展期月数</th>
+                        <th>新年利率</th>
+                        <th>申请人</th>
+                        <th>状态</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for ext in extensions %}
+                    <tr>
+                        <td><strong>{{ ext.bill_no }}</strong></td>
+                        <td>{{ ext.customer_name }}</td>
+                        <td>{{ ext.original_due_date }}</td>
+                        <td>{{ ext.new_due_date }}</td>
+                        <td>{{ ext.extension_months }}</td>
+                        <td>{{ ext.new_rate_annual }}％</td>
+                        <td>{{ ext.applicant_name }}</td>
+                        <td>
+                            {% if ext.status == '待审核' %}
+                            <span class="badge badge-pending">待审核</span>
+                            {% elif ext.status == '已复核' %}
+                            <span class="badge badge-info">已复核</span>
+                            {% elif ext.status == '已批准' %}
+                            <span class="badge badge-approved">已批准</span>
+                            {% elif ext.status == '已拒绝' %}
+                            <span class="badge badge-rejected">已拒绝</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if ext.status == '待审核' and user.role in ('总号掌柜', '分号掌柜') %}
+                            <a href="/loan-extensions/{{ ext.id }}/review" class="btn btn-sm btn-qz" onclick="event.preventDefault(); document.getElementById('review-form-{{ ext.id }}').submit();">
+                                <i class="bi bi-check2-square me-1"></i>复核
+                            </a>
+                            <form id="review-form-{{ ext.id }}" method="post" action="/loan-extensions/{{ ext.id }}/review" class="d-none"></form>
+                            {% elif ext.status == '已复核' and user.role == '总号掌柜' %}
+                            <a href="/loan-extensions/{{ ext.id }}/approve" class="btn btn-sm btn-qz" onclick="event.preventDefault(); document.getElementById('approve-form-{{ ext.id }}').submit();">
+                                <i class="bi bi-check-circle me-1"></i>审批
+                            </a>
+                            <form id="approve-form-{{ ext.id }}" method="post" action="/loan-extensions/{{ ext.id }}/approve" class="d-none"></form>
+                            {% else %}
+                            <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5 text-muted">
+            <i class="bi bi-inbox fs-1 d-block mb-3"></i>
+            <p>暂无展期记录</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

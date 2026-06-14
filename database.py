@@ -268,13 +268,172 @@ def init_db():
         disposal_date TEXT,
         disposal_amount REAL DEFAULT 0,
         operator_id INTEGER NOT NULL,
-        status TEXT NOT NULL DEFAULT '已登记' CHECK(status IN ('已登记', '已计提准备', '已处置', '已核销')),
+        status TEXT NOT NULL DEFAULT '已登记' CHECK(status IN ('已登记', '已计提准备', '已处置', '已核销', '部分核销')),
         remark TEXT,
         created_at TEXT NOT NULL,
         FOREIGN KEY (loan_id) REFERENCES finance_loans(id),
         FOREIGN KEY (operator_id) REFERENCES users(id)
     )
     """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS approval_chains (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        business_type TEXT NOT NULL CHECK(business_type IN ('兑付', '押汇融资', '展期', '核销')),
+        amount_threshold REAL NOT NULL DEFAULT 0,
+        step_order INTEGER NOT NULL,
+        role_required TEXT NOT NULL,
+        description TEXT,
+        created_at TEXT NOT NULL
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS approval_records (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        business_type TEXT NOT NULL,
+        business_id INTEGER NOT NULL,
+        step_order INTEGER NOT NULL,
+        approver_id INTEGER NOT NULL,
+        approver_name TEXT NOT NULL,
+        action TEXT NOT NULL CHECK(action IN ('通过', '拒绝', '退回')),
+        comment TEXT,
+        approved_at TEXT NOT NULL,
+        FOREIGN KEY (approver_id) REFERENCES users(id)
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS credit_occupations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        customer_name TEXT NOT NULL,
+        loan_id INTEGER NOT NULL,
+        occupy_amount REAL NOT NULL CHECK(occupy_amount > 0),
+        occupy_type TEXT NOT NULL CHECK(occupy_type IN ('占用', '释放')),
+        occupy_date TEXT NOT NULL,
+        operator_id INTEGER NOT NULL,
+        remark TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (loan_id) REFERENCES finance_loans(id),
+        FOREIGN KEY (operator_id) REFERENCES users(id)
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS overdue_warnings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        loan_id INTEGER NOT NULL,
+        warning_type TEXT NOT NULL CHECK(warning_type IN ('到期预警', '逾期预警', '严重逾期')),
+        warning_date TEXT NOT NULL,
+        days_before_due INTEGER,
+        message TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT '待处理' CHECK(status IN ('待处理', '已通知', '已处理', '已忽略')),
+        operator_id INTEGER,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (loan_id) REFERENCES finance_loans(id),
+        FOREIGN KEY (operator_id) REFERENCES users(id)
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS customer_risk_ratings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        customer_name TEXT NOT NULL,
+        rating TEXT NOT NULL CHECK(rating IN ('AAA', 'AA', 'A', 'BBB', 'BB', 'B', 'CCC', 'CC', 'C')),
+        rating_score REAL NOT NULL DEFAULT 0,
+        assessment_basis TEXT,
+        assessor_id INTEGER NOT NULL,
+        assessment_date TEXT NOT NULL,
+        previous_rating TEXT,
+        remark TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (assessor_id) REFERENCES users(id)
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS loan_extensions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        loan_id INTEGER NOT NULL,
+        original_due_date TEXT NOT NULL,
+        new_due_date TEXT NOT NULL,
+        extension_reason TEXT NOT NULL,
+        extension_months INTEGER NOT NULL CHECK(extension_months > 0),
+        new_rate_annual REAL,
+        status TEXT NOT NULL DEFAULT '待审核' CHECK(status IN ('待审核', '已复核', '已批准', '已拒绝', '已取消')),
+        applicant_id INTEGER NOT NULL,
+        reviewer_id INTEGER,
+        review_date TEXT,
+        review_comment TEXT,
+        approver_id INTEGER,
+        approve_date TEXT,
+        approve_comment TEXT,
+        remark TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (loan_id) REFERENCES finance_loans(id),
+        FOREIGN KEY (applicant_id) REFERENCES users(id),
+        FOREIGN KEY (reviewer_id) REFERENCES users(id),
+        FOREIGN KEY (approver_id) REFERENCES users(id)
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS partial_writeoffs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        bad_debt_id INTEGER NOT NULL,
+        loan_id INTEGER NOT NULL,
+        writeoff_principal REAL NOT NULL CHECK(writeoff_principal > 0),
+        writeoff_interest REAL NOT NULL DEFAULT 0,
+        writeoff_date TEXT NOT NULL,
+        writeoff_reason TEXT NOT NULL,
+        operator_id INTEGER NOT NULL,
+        approver_id INTEGER,
+        approve_date TEXT,
+        status TEXT NOT NULL DEFAULT '待审批' CHECK(status IN ('待审批', '已批准', '已拒绝')),
+        remark TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (bad_debt_id) REFERENCES bad_debts(id),
+        FOREIGN KEY (loan_id) REFERENCES finance_loans(id),
+        FOREIGN KEY (operator_id) REFERENCES users(id),
+        FOREIGN KEY (approver_id) REFERENCES users(id)
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS audit_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        business_type TEXT NOT NULL,
+        business_id INTEGER NOT NULL,
+        action TEXT NOT NULL,
+        actor_id INTEGER NOT NULL,
+        actor_name TEXT NOT NULL,
+        actor_role TEXT NOT NULL,
+        detail TEXT,
+        ip_address TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (actor_id) REFERENCES users(id)
+    )
+    """)
+
+    cursor.execute("SELECT COUNT(*) as cnt FROM approval_chains")
+    if cursor.fetchone()["cnt"] == 0:
+        today = date.today().isoformat()
+        chains = [
+            ("兑付", 10000, 1, "复核人", "高额兑付需复核人审核", today),
+            ("兑付", 50000, 2, "分号掌柜", "超五万两需分号掌柜审批", today),
+            ("兑付", 100000, 3, "总号掌柜", "超十万两需总号掌柜终审", today),
+            ("押汇融资", 0, 1, "复核人", "押汇融资需复核人审核", today),
+            ("押汇融资", 50000, 2, "分号掌柜", "超五万两需分号掌柜审批", today),
+            ("押汇融资", 100000, 3, "总号掌柜", "超十万两需总号掌柜终审", today),
+            ("展期", 0, 1, "复核人", "展期需复核人审核", today),
+            ("展期", 0, 2, "分号掌柜", "展期需掌柜审批", today),
+            ("核销", 0, 1, "复核人", "核销需复核人审核", today),
+            ("核销", 0, 2, "总号掌柜", "核销需总号掌柜审批", today),
+        ]
+        cursor.executemany(
+            "INSERT INTO approval_chains (business_type, amount_threshold, step_order, role_required, description, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            chains,
+        )
 
     cursor.execute("SELECT COUNT(*) as cnt FROM branches")
     if cursor.fetchone()["cnt"] == 0:

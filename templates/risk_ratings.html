@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+
+{% block title %}客户风险评级 - 传统钱庄汇票协同清算与额度风控系统{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="fw-bold mb-0" style="color: var(--qz-primary);">
+        <i class="bi bi-star me-2"></i>客户风险评级
+    </h4>
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-8">
+        <div class="card card-qz">
+            <div class="card-header">
+                <i class="bi bi-list-ul me-2"></i>评级记录
+            </div>
+            <div class="card-body p-0">
+                {% if ratings %}
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead style="background-color: var(--qz-light);">
+                            <tr>
+                                <th>客户名称</th>
+                                <th>评级</th>
+                                <th>评分</th>
+                                <th>评估依据</th>
+                                <th>评估人</th>
+                                <th>评估日期</th>
+                                <th>上次评级</th>
+                                <th>备注</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for r in ratings %}
+                            <tr>
+                                <td><strong>{{ r.customer_name }}</strong></td>
+                                <td>
+                                    {% if r.rating in ('AAA', 'AA') %}
+                                    <span class="badge bg-success">{{ r.rating }}</span>
+                                    {% elif r.rating in ('A', 'BBB') %}
+                                    <span class="badge bg-primary">{{ r.rating }}</span>
+                                    {% elif r.rating in ('BB', 'B') %}
+                                    <span class="badge bg-warning text-dark">{{ r.rating }}</span>
+                                    {% else %}
+                                    <span class="badge bg-danger">{{ r.rating }}</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if r.rating_score >= 80 %}
+                                    <span class="text-success fw-bold">{{ r.rating_score }}</span>
+                                    {% elif r.rating_score >= 60 %}
+                                    <span class="text-primary fw-bold">{{ r.rating_score }}</span>
+                                    {% elif r.rating_score >= 40 %}
+                                    <span class="text-warning fw-bold">{{ r.rating_score }}</span>
+                                    {% else %}
+                                    <span class="text-danger fw-bold">{{ r.rating_score }}</span>
+                                    {% endif %}
+                                </td>
+                                <td><small>{{ r.assessment_basis or '—' }}</small></td>
+                                <td>{{ r.assessor_name }}</td>
+                                <td>{{ r.assessment_date }}</td>
+                                <td>
+                                    {% if r.previous_rating %}
+                                    {% if r.previous_rating in ('AAA', 'AA') %}
+                                    <span class="badge bg-success">{{ r.previous_rating }}</span>
+                                    {% elif r.previous_rating in ('A', 'BBB') %}
+                                    <span class="badge bg-primary">{{ r.previous_rating }}</span>
+                                    {% elif r.previous_rating in ('BB', 'B') %}
+                                    <span class="badge bg-warning text-dark">{{ r.previous_rating }}</span>
+                                    {% else %}
+                                    <span class="badge bg-danger">{{ r.previous_rating }}</span>
+                                    {% endif %}
+                                    {% else %}
+                                    <span class="text-muted">—</span>
+                                    {% endif %}
+                                </td>
+                                <td><small>{{ r.remark or '—' }}</small></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-5 text-muted">
+                    <i class="bi bi-star fs-1 d-block mb-3"></i>
+                    <p>暂无评级记录</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card card-qz">
+            <div class="card-header">
+                <i class="bi bi-plus-circle me-2"></i>新增评级
+            </div>
+            <div class="card-body">
+                <form method="post" action="/risk-ratings/create">
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">客户名称</label>
+                        <select class="form-select mb-2" id="customer_select" onchange="document.getElementById('customer_input').value = this.value">
+                            <option value="">— 选择已有客户 —</option>
+                            {% for c in customers %}
+                            <option value="{{ c }}">{{ c }}</option>
+                            {% endfor %}
+                        </select>
+                        <input type="text" class="form-control" id="customer_input" name="customer_name" placeholder="或直接输入客户名称" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">评级</label>
+                        <select class="form-select" name="rating" required>
+                            <option value="">请选择评级</option>
+                            <option value="AAA">AAA</option>
+                            <option value="AA">AA</option>
+                            <option value="A">A</option>
+                            <option value="BBB">BBB</option>
+                            <option value="BB">BB</option>
+                            <option value="B">B</option>
+                            <option value="CCC">CCC</option>
+                            <option value="CC">CC</option>
+                            <option value="C">C</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">评分</label>
+                        <input type="number" class="form-control" name="rating_score" min="0" max="100" placeholder="0-100" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">评估依据</label>
+                        <textarea class="form-control" name="assessment_basis" rows="3" placeholder="请填写评估依据"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">评估日期</label>
+                        <input type="date" class="form-control" name="assessment_date" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">备注</label>
+                        <textarea class="form-control" name="remark" rows="2" placeholder="备注信息"></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-qz w-100">
+                        <i class="bi bi-check-lg me-1"></i>提交评级
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

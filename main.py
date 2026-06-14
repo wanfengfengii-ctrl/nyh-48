@@ -185,6 +185,126 @@ def auto_create_clearing(bill_id: int, conn):
         (from_branch_id, to_branch_id, bill_id, redemption["amount"], today, redemption["operator_id"], f"汇票 {bill['bill_no']} 兑付自动生成", today),
     )
 
+def add_audit_log(business_type: str, business_id: int, action: str, user: dict, detail: str = "", conn=None):
+    should_close = conn is None
+    if conn is None:
+        conn = get_db()
+    cursor = conn.cursor()
+    today = date.today().isoformat()
+    cursor.execute(
+        "INSERT INTO audit_logs (business_type, business_id, action, actor_id, actor_name, actor_role, detail, ip_address, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (business_type, business_id, action, user["id"], user["real_name"], user["role"], detail, "", today),
+    )
+    if should_close:
+        conn.commit()
+        conn.close()
+
+
+def add_credit_occupation(customer_name: str, loan_id: int, amount: float, occupy_type: str, operator_id: int, remark: str = "", conn=None):
+    should_close = conn is None
+    if conn is None:
+        conn = get_db()
+    cursor = conn.cursor()
+    today = date.today().isoformat()
+    cursor.execute(
+        "INSERT INTO credit_occupations (customer_name, loan_id, occupy_amount, occupy_type, occupy_date, operator_id, remark, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (customer_name, loan_id, amount, occupy_type, today, operator_id, remark, today),
+    )
+    if occupy_type == "占用":
+        cursor.execute(
+            "UPDATE customer_credits SET used_limit = used_limit + ? WHERE customer_name = ? AND status = '生效'",
+            (amount, customer_name),
+        )
+    elif occupy_type == "释放":
+        cursor.execute(
+            "UPDATE customer_credits SET used_limit = CASE WHEN used_limit - ? < 0 THEN 0 ELSE used_limit - ? END WHERE customer_name = ? AND status = '生效'",
+            (amount, amount, customer_name),
+        )
+    if should_close:
+        conn.commit()
+        conn.close()
+
+
+def check_overdue_loans(conn):
+    cursor = conn.cursor()
+    today = date.today()
+    today_str = today.isoformat()
+    cursor.execute(
+        "SELECT fl.*, b.bill_no FROM finance_loans fl LEFT JOIN bills b ON fl.bill_id = b.id WHERE fl.status IN ('已放款', '还款中') AND fl.due_date IS NOT NULL"
+    )
+    active_loans = [dict(row) for row in cursor.fetchall()]
+    for loan in active_loans:
+        due_date = loan["due_date"]
+        days_before = (date.fromisoformat(due_date) - today).days
+        if days_before <= 0:
+            warning_type = "严重逾期"
+            message = f"客户 {loan['customer_name']} 融资已逾期 {-days_before} 天，金额 {loan['loan_amount'] - loan['paid_amount']} 两"
+        elif days_before <= 3:
+            warning_type = "逾期预警"
+            message = f"客户 {loan['customer_name']} 融资将于 {days_before} 天后到期，剩余 {loan['loan_amount'] - loan['paid_amount']} 两"
+        elif days_before <= 7:
+            warning_type = "到期预警"
+            message = f"客户 {loan['customer_name']} 融资将于 {days_before} 天后到期，剩余 {loan['loan_amount'] - loan['paid_amount']} 两"
+        else:
+            continue
+        cursor.execute(
+            "SELECT id FROM overdue_warnings WHERE loan_id = ? AND warning_type = ? AND status = '待处理'",
+            (loan["id"], warning_type),
+        )
+        if cursor.fetchone():
+            continue
+        cursor.execute(
+            "INSERT INTO overdue_warnings (loan_id, warning_type, warning_date, days_before_due, message, status, created_at) VALUES (?, ?, ?, ?, ?, '待处理', ?)",
+            (loan["id"], warning_type, today_str, days_before, message, today_str),
+        )
+    cursor.execute(
+        "SELECT fl.*, b.bill_no FROM finance_loans fl LEFT JOIN bills b ON fl.bill_id = b.id WHERE fl.status = '已逾期'"
+    )
+    overdue_loans = [dict(row) for row in cursor.fetchall()]
+    for loan in overdue_loans:
+        if not loan["due_date"]:
+            continue
+        days_overdue = (today - date.fromisoformat(loan["due_date"])).days
+        cursor.execute(
+            "SELECT id FROM overdue_warnings WHERE loan_id = ? AND warning_type = '严重逾期' AND warning_date = ?",
+            (loan["id"], today_str),
+        )
+        if cursor.fetchone():
+            continue
+        message = f"客户 {loan['customer_name']} 融资已逾期 {days_overdue} 天，剩余 {loan['loan_amount'] - loan['paid_amount']} 两"
+        cursor.execute(
+            "INSERT INTO overdue_warnings (loan_id, warning_type, warning_date, days_before_due, message, status, created_at) VALUES (?, ?, ?, ?, ?, '待处理', ?)",
+            (loan["id"], "严重逾期", today_str, -days_overdue, message, today_str),
+        )
+
+
+def get_approval_chain(business_type: str, amount: float, conn):
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM approval_chains WHERE business_type = ? AND amount_threshold <= ? ORDER BY step_order",
+        (business_type, amount),
+    )
+    return [dict(row) for row in cursor.fetchall()]
+
+
+def get_next_approval_step(business_type: str, business_id: int, amount: float, conn):
+    chain = get_approval_chain(business_type, amount, conn)
+    if not chain:
+        return None
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT step_order FROM approval_records WHERE business_type = ? AND business_id = ? AND action = '通过' ORDER BY step_order DESC LIMIT 1",
+        (business_type, business_id),
+    )
+    last_approved = cursor.fetchone()
+    if not last_approved:
+        return chain[0]
+    last_step = last_approved["step_order"]
+    for step in chain:
+        if step["step_order"] > last_step:
+            return step
+    return None
+
 
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
@@ -281,6 +401,11 @@ def dashboard(request: Request, user=Depends(auth_dep)):
             if total > row["daily_issue_limit"] * 0.8:
                 warnings.append(f"分号 {row['branch_name']} 今日已签发 {total} 两，达额度 {row['daily_issue_limit']} 两的 {int(total/row['daily_issue_limit']*100)}%")
 
+    check_overdue_loans(conn)
+    cursor.execute("SELECT COUNT(*) as cnt FROM overdue_warnings WHERE status = '待处理'")
+    overdue_warning_count = cursor.fetchone()["cnt"]
+    if overdue_warning_count > 0:
+        warnings.append(f"有 {overdue_warning_count} 条逾期预警待处理")
     conn.close()
     return templates.TemplateResponse(
         "dashboard.html",
@@ -1712,10 +1837,7 @@ def finance_loan_approve(
         "UPDATE finance_loans SET status = '已放款', approver_id = ?, approve_date = ?, approve_comment = ?, loan_date = ? WHERE id = ?",
         (user["id"], today, approve_comment, today, loan_id),
     )
-    cursor.execute(
-        "UPDATE customer_credits SET used_limit = used_limit + ? WHERE customer_name = ? AND status = '生效'",
-        (loan["loan_amount"], loan["customer_name"]),
-    )
+    add_credit_occupation(loan["customer_name"], loan_id, loan["loan_amount"], "占用", user["id"], "融资放款占用授信", conn)
     add_timeline(loan["bill_id"], "押汇放款", user["real_name"], f"押汇融资放款 {loan['loan_amount']} 两，客户 {loan['customer_name']}" + (f"，审批意见：{approve_comment}" if approve_comment else ""), conn)
     conn.commit()
     conn.close()
@@ -1802,10 +1924,7 @@ def finance_loan_settle(request: Request, loan_id: int, user=Depends(auth_dep)):
         "UPDATE finance_loans SET paid_amount = loan_amount, status = '已结清' WHERE id = ?",
         (loan_id,),
     )
-    cursor.execute(
-        "UPDATE customer_credits SET used_limit = used_limit - ? WHERE customer_name = ? AND status = '生效'",
-        (loan["loan_amount"], loan["customer_name"]),
-    )
+    add_credit_occupation(loan["customer_name"], loan_id, loan["loan_amount"], "释放", user["id"], "强制结清释放授信", conn)
     add_timeline(loan["bill_id"], "押汇结清", user["real_name"], f"押汇融资强制结清，融资金额 {loan['loan_amount']} 两", conn)
     conn.commit()
     conn.close()
@@ -2237,10 +2356,8 @@ def bad_debt_update_status(
             bd = cursor.fetchone()
             if bd:
                 cursor.execute("UPDATE finance_loans SET status = '已结清', paid_amount = loan_amount WHERE id = ?", (bd["loan_id"],))
-                cursor.execute(
-                    "UPDATE customer_credits SET used_limit = used_limit - ? WHERE customer_name = ? AND status = '生效'",
-                    (bd["loan_amount"], bd["customer_name"]),
-                )
+                add_credit_occupation(bd["customer_name"], bd["loan_id"], bd["loan_amount"], "释放", user["id"], "坏账核销释放授信", conn)
+                add_audit_log("核销", bad_debt_id, "坏账核销", user, f"客户 {bd['customer_name']}，金额 {bd['principal_remaining']} 两")
                 add_timeline(bd["bill_id"], "坏账核销", user["real_name"], f"坏账核销，核销金额 {bd['principal_remaining']} 两", conn)
     conn.commit()
     conn.close()
@@ -2272,7 +2389,7 @@ def reports_generate(
     cursor = conn.cursor()
 
     report_data = {
-        "type": "日" if report_type == "daily" else ("月" if report_type == "monthly" else ("融资" if report_type == "finance" else "催收")),
+        "type": "日" if report_type == "daily" else ("月" if report_type == "monthly" else ("融资" if report_type == "finance" else ("催收" if report_type == "collection" else ("授信" if report_type == "credit" else "风险")))),
         "start_date": start_date,
         "end_date": end_date,
     }
@@ -2352,6 +2469,42 @@ def reports_generate(
         )
         total_collected = cursor.fetchone()["total_collected"]
         report_data["interest_summary"] = {"total_accrued": total_accrued, "total_collected": total_collected}
+        cursor.execute(
+            "SELECT br.branch_name, COUNT(fl.id) as cnt, COALESCE(SUM(fl.loan_amount), 0) as total_amount, COALESCE(SUM(fl.loan_amount - fl.paid_amount), 0) as outstanding FROM finance_loans fl LEFT JOIN branches br ON fl.branch_id = br.id WHERE fl.created_at BETWEEN ? AND ? GROUP BY fl.branch_id ORDER BY total_amount DESC",
+            (start_date, end_date),
+        )
+        report_data["branch_finance_stats"] = [dict(row) for row in cursor.fetchall()]
+        cursor.execute(
+            "SELECT COALESCE(SUM(occupy_amount), 0) as total_occupied FROM credit_occupations WHERE occupy_type = '占用' AND occupy_date BETWEEN ? AND ?",
+            (start_date, end_date),
+        )
+        report_data["credit_occupied"] = cursor.fetchone()["total_occupied"]
+        cursor.execute(
+            "SELECT COALESCE(SUM(occupy_amount), 0) as total_released FROM credit_occupations WHERE occupy_type = '释放' AND occupy_date BETWEEN ? AND ?",
+            (start_date, end_date),
+        )
+        report_data["credit_released"] = cursor.fetchone()["total_released"]
+
+    elif report_type == "credit":
+        cursor.execute(
+            "SELECT cc.customer_name, cc.customer_type, cc.credit_limit, cc.used_limit, cc.credit_limit - cc.used_limit as available_limit, cc.rate_annual, cc.status, br.branch_name FROM customer_credits cc LEFT JOIN branches br ON cc.branch_id = br.id WHERE cc.status = '生效' ORDER BY cc.credit_limit DESC"
+        )
+        report_data["credit_list"] = [dict(row) for row in cursor.fetchall()]
+        cursor.execute(
+            "SELECT COALESCE(SUM(credit_limit), 0) as total_limit, COALESCE(SUM(used_limit), 0) as total_used FROM customer_credits WHERE status = '生效'"
+        )
+        cr_row = cursor.fetchone()
+        report_data["credit_summary"] = {"total_limit": cr_row["total_limit"], "total_used": cr_row["total_used"], "total_available": cr_row["total_limit"] - cr_row["total_used"]}
+
+    elif report_type == "risk":
+        cursor.execute(
+            "SELECT crr.customer_name, crr.rating, crr.rating_score, crr.assessment_date, crr.previous_rating, u.real_name as assessor_name FROM customer_risk_ratings crr LEFT JOIN users u ON crr.assessor_id = u.id ORDER BY crr.rating_score DESC"
+        )
+        report_data["risk_list"] = [dict(row) for row in cursor.fetchall()]
+        cursor.execute(
+            "SELECT rating, COUNT(*) as cnt, AVG(rating_score) as avg_score FROM customer_risk_ratings GROUP BY rating ORDER BY avg_score DESC"
+        )
+        report_data["risk_distribution"] = [dict(row) for row in cursor.fetchall()]
 
     elif report_type == "collection":
         cursor.execute(
@@ -2385,12 +2538,450 @@ def reports_generate(
         )
         bd_row = cursor.fetchone()
         report_data["bad_debt_summary"] = {"total_principal": bd_row["total_principal"], "total_provision": bd_row["total_provision"], "total_disposal": bd_row["total_disposal"]}
+        cursor.execute(
+            "SELECT COUNT(*) as cnt FROM overdue_warnings WHERE warning_date BETWEEN ? AND ?",
+            (start_date, end_date),
+        )
+        report_data["overdue_warning_count"] = cursor.fetchone()["cnt"]
+        cursor.execute(
+            "SELECT COUNT(*) as cnt FROM partial_writeoffs WHERE writeoff_date BETWEEN ? AND ?",
+            (start_date, end_date),
+        )
+        report_data["partial_writeoff_count"] = cursor.fetchone()["cnt"]
 
     conn.close()
     return templates.TemplateResponse(
         "reports.html",
         {"request": request, "user": user, "report_data": report_data},
     )
+
+
+@app.get("/overdue-warnings", response_class=HTMLResponse)
+def overdue_warnings_page(request: Request, status: Optional[str] = None, user=Depends(auth_dep)):
+    if user["role"] not in ALL_MANAGE_ROLES:
+        raise HTTPException(status_code=403, detail="无权查看逾期预警")
+    conn = get_db()
+    cursor = conn.cursor()
+    check_overdue_loans(conn)
+    sql = "SELECT ow.*, fl.customer_name, fl.loan_amount, fl.paid_amount, fl.due_date as loan_due_date, b.bill_no, u.real_name as operator_name FROM overdue_warnings ow LEFT JOIN finance_loans fl ON ow.loan_id = fl.id LEFT JOIN bills b ON fl.bill_id = b.id LEFT JOIN users u ON ow.operator_id = u.id"
+    params = []
+    if status and status in ("待处理", "已通知", "已处理", "已忽略"):
+        sql += " WHERE ow.status = ?"
+        params.append(status)
+    sql += " ORDER BY ow.id DESC"
+    cursor.execute(sql, params)
+    warnings_list = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return templates.TemplateResponse(
+        "overdue_warnings.html",
+        {"request": request, "user": user, "warnings": warnings_list, "current_status": status},
+    )
+
+
+@app.post("/overdue-warnings/check")
+def overdue_warnings_check(request: Request, user=Depends(auth_dep)):
+    if user["role"] not in ALL_MANAGE_ROLES:
+        raise HTTPException(status_code=403, detail="无权执行逾期检查")
+    conn = get_db()
+    check_overdue_loans(conn)
+    conn.commit()
+    conn.close()
+    return RedirectResponse("/overdue-warnings", status_code=303)
+
+
+@app.post("/overdue-warnings/{warning_id}/status")
+def overdue_warning_update_status(request: Request, warning_id: int, status: str = Form(...), user=Depends(auth_dep)):
+    if user["role"] not in OPERATOR_ROLES:
+        raise HTTPException(status_code=403, detail="无权更新预警状态")
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE overdue_warnings SET status = ?, operator_id = ? WHERE id = ?", (status, user["id"], warning_id))
+    add_audit_log("逾期预警", warning_id, f"更新状态为{status}", user, "", conn)
+    conn.commit()
+    conn.close()
+    return RedirectResponse("/overdue-warnings", status_code=303)
+
+
+@app.get("/batch-collections", response_class=HTMLResponse)
+def batch_collections_page(request: Request, user=Depends(auth_dep)):
+    if user["role"] not in OPERATOR_ROLES:
+        raise HTTPException(status_code=403, detail="无权批量催收")
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT fl.*, b.bill_no, u.real_name as applicant_name, br.branch_name FROM finance_loans fl LEFT JOIN bills b ON fl.bill_id = b.id LEFT JOIN users u ON fl.applicant_id = u.id LEFT JOIN branches br ON fl.branch_id = br.id WHERE fl.status = '已逾期' ORDER BY fl.id DESC"
+    )
+    overdue_loans = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return templates.TemplateResponse(
+        "batch_collections.html",
+        {"request": request, "user": user, "overdue_loans": overdue_loans},
+    )
+
+
+@app.post("/batch-collections")
+def batch_collections_submit(request: Request, collection_data: str = Form(...), user=Depends(auth_dep)):
+    if user["role"] not in OPERATOR_ROLES:
+        raise HTTPException(status_code=403, detail="无权批量催收")
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        items = json.loads(collection_data)
+    except json.JSONDecodeError:
+        conn.close()
+        raise HTTPException(status_code=400, detail="数据格式错误")
+    results = []
+    errors = []
+    for item in items:
+        loan_id = int(item.get("loan_id", 0))
+        reminder_type = item.get("reminder_type", "逾期催收")
+        content_text = item.get("content", "")
+        cursor.execute("SELECT * FROM finance_loans WHERE id = ?", (loan_id,))
+        loan = cursor.fetchone()
+        if not loan:
+            errors.append(f"融资记录 {loan_id} 不存在")
+            continue
+        if loan["status"] != "已逾期":
+            errors.append(f"融资记录 {loan_id} 非逾期状态")
+            continue
+        today = date.today().isoformat()
+        cursor.execute(
+            "INSERT INTO collection_reminders (loan_id, reminder_type, reminder_date, content, operator_id, status, created_at) VALUES (?, ?, ?, ?, ?, '待处理', ?)",
+            (loan_id, reminder_type, today, content_text, user["id"], today),
+        )
+        add_timeline(loan["bill_id"], f"批量催收-{reminder_type}", user["real_name"], content_text, conn)
+        results.append(f"融资 {loan_id}：催收提醒已创建")
+    conn.commit()
+    conn.close()
+    return templates.TemplateResponse(
+        "batch_result.html",
+        {"request": request, "user": user, "results": results, "errors": errors, "action": "批量催收"},
+    )
+
+
+@app.get("/finance/loans/{loan_id}/extend", response_class=HTMLResponse)
+def loan_extend_page(request: Request, loan_id: int, user=Depends(auth_dep)):
+    if user["role"] not in OPERATOR_ROLES:
+        raise HTTPException(status_code=403, detail="无权申请展期")
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT fl.*, b.bill_no, br.branch_name FROM finance_loans fl LEFT JOIN bills b ON fl.bill_id = b.id LEFT JOIN branches br ON fl.branch_id = br.id WHERE fl.id = ?",
+        (loan_id,),
+    )
+    loan = cursor.fetchone()
+    conn.close()
+    if not loan:
+        raise HTTPException(status_code=404, detail="融资记录不存在")
+    if loan["status"] not in ("已放款", "还款中", "已逾期"):
+        raise HTTPException(status_code=400, detail="当前状态不可申请展期")
+    return templates.TemplateResponse(
+        "loan_extend.html",
+        {"request": request, "user": user, "loan": dict(loan)},
+    )
+
+
+@app.post("/finance/loans/{loan_id}/extend")
+def loan_extend_submit(request: Request, loan_id: int, extension_months: int = Form(...), new_due_date: str = Form(...), extension_reason: str = Form(...), new_rate_annual: str = Form(default=""), remark: str = Form(default=""), user=Depends(auth_dep)):
+    if user["role"] not in OPERATOR_ROLES:
+        raise HTTPException(status_code=403, detail="无权申请展期")
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM finance_loans WHERE id = ?", (loan_id,))
+    loan = cursor.fetchone()
+    if not loan:
+        conn.close()
+        raise HTTPException(status_code=404, detail="融资记录不存在")
+    if loan["status"] not in ("已放款", "还款中", "已逾期"):
+        conn.close()
+        raise HTTPException(status_code=400, detail="当前状态不可申请展期")
+    if extension_months <= 0:
+        conn.close()
+        raise HTTPException(status_code=400, detail="展期月数必须大于零")
+    today = date.today().isoformat()
+    new_rate = float(new_rate_annual) if new_rate_annual else loan["rate_annual"]
+    cursor.execute(
+        "INSERT INTO loan_extensions (loan_id, original_due_date, new_due_date, extension_reason, extension_months, new_rate_annual, status, applicant_id, remark, created_at) VALUES (?, ?, ?, ?, ?, ?, '待审核', ?, ?, ?)",
+        (loan_id, loan["due_date"], new_due_date, extension_reason, extension_months, new_rate, user["id"], remark, today),
+    )
+    ext_id = cursor.lastrowid
+    add_audit_log("展期", ext_id, "申请展期", user, f"融资 {loan_id}，展期 {extension_months} 月", conn)
+    conn.commit()
+    conn.close()
+    return RedirectResponse("/loan-extensions", status_code=303)
+
+
+@app.get("/loan-extensions", response_class=HTMLResponse)
+def loan_extensions_list(request: Request, user=Depends(auth_dep)):
+    if user["role"] not in ALL_MANAGE_ROLES:
+        raise HTTPException(status_code=403, detail="无权查看展期记录")
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT le.*, fl.customer_name, fl.loan_amount, fl.due_date as current_due_date, b.bill_no, u1.real_name as applicant_name, u2.real_name as reviewer_name, u3.real_name as approver_name FROM loan_extensions le LEFT JOIN finance_loans fl ON le.loan_id = fl.id LEFT JOIN bills b ON fl.bill_id = b.id LEFT JOIN users u1 ON le.applicant_id = u1.id LEFT JOIN users u2 ON le.reviewer_id = u2.id LEFT JOIN users u3 ON le.approver_id = u3.id ORDER BY le.id DESC"
+    )
+    extensions = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return templates.TemplateResponse(
+        "loan_extensions.html",
+        {"request": request, "user": user, "extensions": extensions},
+    )
+
+
+@app.post("/loan-extensions/{ext_id}/review")
+def loan_extension_review(request: Request, ext_id: int, action: str = Form(...), review_comment: str = Form(default=""), user=Depends(auth_dep)):
+    if user["role"] not in REVIEWER_ROLES:
+        raise HTTPException(status_code=403, detail="仅复核人或掌柜可审核展期")
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM loan_extensions WHERE id = ?", (ext_id,))
+    ext = cursor.fetchone()
+    if not ext:
+        conn.close()
+        raise HTTPException(status_code=404, detail="展期记录不存在")
+    if ext["status"] != "待审核":
+        conn.close()
+        raise HTTPException(status_code=400, detail="该展期申请已处理")
+    today = date.today().isoformat()
+    if action == "approve":
+        cursor.execute("UPDATE loan_extensions SET status = '已复核', reviewer_id = ?, review_date = ?, review_comment = ? WHERE id = ?", (user["id"], today, review_comment, ext_id))
+        add_audit_log("展期", ext_id, "复核通过", user, "", conn)
+    else:
+        cursor.execute("UPDATE loan_extensions SET status = '已拒绝', reviewer_id = ?, review_date = ?, review_comment = ? WHERE id = ?", (user["id"], today, review_comment, ext_id))
+        add_audit_log("展期", ext_id, "复核拒绝", user, review_comment, conn)
+    conn.commit()
+    conn.close()
+    return RedirectResponse("/loan-extensions", status_code=303)
+
+
+@app.post("/loan-extensions/{ext_id}/approve")
+def loan_extension_approve(request: Request, ext_id: int, action: str = Form(...), approve_comment: str = Form(default=""), user=Depends(auth_dep)):
+    if user["role"] not in MANAGER_ROLES:
+        raise HTTPException(status_code=403, detail="仅掌柜可审批展期")
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT le.*, fl.customer_name FROM loan_extensions le LEFT JOIN finance_loans fl ON le.loan_id = fl.id WHERE le.id = ?", (ext_id,))
+    ext = cursor.fetchone()
+    if not ext:
+        conn.close()
+        raise HTTPException(status_code=404, detail="展期记录不存在")
+    if ext["status"] != "已复核":
+        conn.close()
+        raise HTTPException(status_code=400, detail="仅已复核的展期可审批")
+    today = date.today().isoformat()
+    if action == "approve":
+        cursor.execute("UPDATE loan_extensions SET status = '已批准', approver_id = ?, approve_date = ?, approve_comment = ? WHERE id = ?", (user["id"], today, approve_comment, ext_id))
+        cursor.execute("UPDATE finance_loans SET due_date = ?, rate_annual = COALESCE(?, rate_annual) WHERE id = ?", (ext["new_due_date"], ext["new_rate_annual"], ext["loan_id"]))
+        cursor.execute("UPDATE finance_loans SET status = '还款中' WHERE id = ? AND status = '已逾期'", (ext["loan_id"],))
+        add_audit_log("展期", ext_id, "批准展期", user, f"融资 {ext['loan_id']}，新到期日 {ext['new_due_date']}", conn)
+    else:
+        cursor.execute("UPDATE loan_extensions SET status = '已拒绝', approver_id = ?, approve_date = ?, approve_comment = ? WHERE id = ?", (user["id"], today, approve_comment, ext_id))
+        add_audit_log("展期", ext_id, "拒绝展期", user, approve_comment, conn)
+    conn.commit()
+    conn.close()
+    return RedirectResponse("/loan-extensions", status_code=303)
+
+
+@app.get("/partial-writeoffs", response_class=HTMLResponse)
+def partial_writeoffs_list(request: Request, user=Depends(auth_dep)):
+    if user["role"] not in ALL_MANAGE_ROLES:
+        raise HTTPException(status_code=403, detail="无权查看部分核销")
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT pw.*, fl.customer_name, fl.loan_amount, b.bill_no, u1.real_name as operator_name, u2.real_name as approver_name FROM partial_writeoffs pw LEFT JOIN finance_loans fl ON pw.loan_id = fl.id LEFT JOIN bills b ON fl.bill_id = b.id LEFT JOIN users u1 ON pw.operator_id = u1.id LEFT JOIN users u2 ON pw.approver_id = u2.id ORDER BY pw.id DESC"
+    )
+    writeoffs = [dict(row) for row in cursor.fetchall()]
+    cursor.execute(
+        "SELECT bd.*, fl.customer_name, b.bill_no FROM bad_debts bd LEFT JOIN finance_loans fl ON bd.loan_id = fl.id LEFT JOIN bills b ON fl.bill_id = b.id WHERE bd.status IN ('已登记', '已计提准备') ORDER BY bd.id DESC"
+    )
+    bad_debts_list = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return templates.TemplateResponse(
+        "partial_writeoffs.html",
+        {"request": request, "user": user, "writeoffs": writeoffs, "bad_debts": bad_debts_list},
+    )
+
+
+@app.post("/partial-writeoffs/create")
+def partial_writeoff_create(request: Request, bad_debt_id: int = Form(...), writeoff_principal: float = Form(...), writeoff_interest: float = Form(default=0), writeoff_date: str = Form(...), writeoff_reason: str = Form(...), remark: str = Form(default=""), user=Depends(auth_dep)):
+    if user["role"] not in MANAGER_ROLES:
+        raise HTTPException(status_code=403, detail="仅掌柜可登记部分核销")
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT bd.*, fl.customer_name, fl.bill_id, fl.loan_amount FROM bad_debts bd LEFT JOIN finance_loans fl ON bd.loan_id = fl.id WHERE bd.id = ?", (bad_debt_id,))
+    bd = cursor.fetchone()
+    if not bd:
+        conn.close()
+        raise HTTPException(status_code=404, detail="坏账记录不存在")
+    today = date.today().isoformat()
+    cursor.execute(
+        "INSERT INTO partial_writeoffs (bad_debt_id, loan_id, writeoff_principal, writeoff_interest, writeoff_date, writeoff_reason, operator_id, status, remark, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, '待审批', ?, ?)",
+        (bad_debt_id, bd["loan_id"], writeoff_principal, writeoff_interest, writeoff_date, writeoff_reason, user["id"], remark, today),
+    )
+    wo_id = cursor.lastrowid
+    add_audit_log("部分核销", wo_id, "登记部分核销", user, f"坏账 {bad_debt_id}，核销本金 {writeoff_principal} 两", conn)
+    conn.commit()
+    conn.close()
+    return RedirectResponse("/partial-writeoffs", status_code=303)
+
+
+@app.post("/partial-writeoffs/{wo_id}/approve")
+def partial_writeoff_approve(request: Request, wo_id: int, action: str = Form(...), user=Depends(auth_dep)):
+    if user["role"] != "总号掌柜":
+        raise HTTPException(status_code=403, detail="仅总号掌柜可审批部分核销")
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT pw.*, fl.customer_name, fl.bill_id, fl.loan_amount FROM partial_writeoffs pw LEFT JOIN finance_loans fl ON pw.loan_id = fl.id WHERE pw.id = ?", (wo_id,))
+    wo = cursor.fetchone()
+    if not wo:
+        conn.close()
+        raise HTTPException(status_code=404, detail="核销记录不存在")
+    if wo["status"] != "待审批":
+        conn.close()
+        raise HTTPException(status_code=400, detail="该核销申请已处理")
+    today = date.today().isoformat()
+    if action == "approve":
+        cursor.execute("UPDATE partial_writeoffs SET status = '已批准', approver_id = ?, approve_date = ? WHERE id = ?", (user["id"], today, wo_id))
+        cursor.execute("UPDATE bad_debts SET principal_remaining = principal_remaining - ?, status = CASE WHEN principal_remaining - ? <= 0 THEN '已核销' ELSE '部分核销' END WHERE id = ?", (wo["writeoff_principal"], wo["writeoff_principal"], wo["bad_debt_id"]))
+        add_credit_occupation(wo["customer_name"], wo["loan_id"], wo["writeoff_principal"], "释放", user["id"], "部分核销释放授信", conn)
+        add_audit_log("部分核销", wo_id, "批准核销", user, f"核销本金 {wo['writeoff_principal']} 两", conn)
+    else:
+        cursor.execute("UPDATE partial_writeoffs SET status = '已拒绝', approver_id = ?, approve_date = ? WHERE id = ?", (user["id"], today, wo_id))
+        add_audit_log("部分核销", wo_id, "拒绝核销", user, "", conn)
+    conn.commit()
+    conn.close()
+    return RedirectResponse("/partial-writeoffs", status_code=303)
+
+
+@app.get("/risk-ratings", response_class=HTMLResponse)
+def risk_ratings_page(request: Request, user=Depends(auth_dep)):
+    if user["role"] not in ALL_MANAGE_ROLES:
+        raise HTTPException(status_code=403, detail="无权查看风险评级")
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT crr.*, u.real_name as assessor_name FROM customer_risk_ratings crr LEFT JOIN users u ON crr.assessor_id = u.id ORDER BY crr.id DESC"
+    )
+    ratings = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return templates.TemplateResponse(
+        "risk_ratings.html",
+        {"request": request, "user": user, "ratings": ratings},
+    )
+
+
+@app.post("/risk-ratings/create")
+def risk_rating_create(request: Request, customer_name: str = Form(...), rating: str = Form(...), rating_score: float = Form(...), assessment_basis: str = Form(default=""), remark: str = Form(default=""), user=Depends(auth_dep)):
+    if user["role"] not in MANAGER_ROLES:
+        raise HTTPException(status_code=403, detail="仅掌柜可评定风险等级")
+    conn = get_db()
+    cursor = conn.cursor()
+    today = date.today().isoformat()
+    cursor.execute("SELECT rating FROM customer_risk_ratings WHERE customer_name = ? ORDER BY id DESC LIMIT 1", (customer_name,))
+    prev = cursor.fetchone()
+    previous_rating = prev["rating"] if prev else None
+    cursor.execute(
+        "INSERT INTO customer_risk_ratings (customer_name, rating, rating_score, assessment_basis, assessor_id, assessment_date, previous_rating, remark, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (customer_name, rating, rating_score, assessment_basis, user["id"], today, previous_rating, remark, today),
+    )
+    add_audit_log("风险评级", cursor.lastrowid, f"评级为{rating}", user, f"客户 {customer_name}，评分 {rating_score}", conn)
+    conn.commit()
+    conn.close()
+    return RedirectResponse("/risk-ratings", status_code=303)
+
+
+@app.get("/branch-monitor", response_class=HTMLResponse)
+def branch_monitor_page(request: Request, user=Depends(auth_dep)):
+    if user["role"] not in ALL_MANAGE_ROLES:
+        raise HTTPException(status_code=403, detail="无权查看分号监控")
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM branches WHERE status = '营业中' ORDER BY id")
+    branches = [dict(row) for row in cursor.fetchall()]
+    branch_stats = []
+    for branch in branches:
+        bid = branch["id"]
+        cursor.execute("SELECT COUNT(*) as cnt, COALESCE(SUM(loan_amount), 0) as total_amount FROM finance_loans WHERE branch_id = ? AND status IN ('已放款', '还款中', '已逾期')", (bid,))
+        active_row = cursor.fetchone()
+        cursor.execute("SELECT COUNT(*) as cnt, COALESCE(SUM(loan_amount - paid_amount), 0) as total_overdue FROM finance_loans WHERE branch_id = ? AND status = '已逾期'", (bid,))
+        overdue_row = cursor.fetchone()
+        cursor.execute("SELECT COUNT(*) as cnt FROM finance_loans WHERE branch_id = ? AND status = '已结清'", (bid,))
+        settled_count = cursor.fetchone()["cnt"]
+        cursor.execute("SELECT COALESCE(SUM(paid_amount), 0) as total_paid FROM finance_loans WHERE branch_id = ? AND status IN ('已放款', '还款中', '已逾期')", (bid,))
+        total_paid = cursor.fetchone()["total_paid"]
+        cursor.execute("SELECT COALESCE(SUM(loan_amount), 0) as total_all FROM finance_loans WHERE branch_id = ?", (bid,))
+        total_all = cursor.fetchone()["total_all"]
+        branch_stats.append({"id": bid, "branch_name": branch["branch_name"], "branch_code": branch["branch_code"], "active_count": active_row["cnt"], "active_amount": active_row["total_amount"], "overdue_count": overdue_row["cnt"], "overdue_amount": overdue_row["total_overdue"], "settled_count": settled_count, "total_paid": total_paid, "total_all": total_all})
+    conn.close()
+    return templates.TemplateResponse(
+        "branch_monitor.html",
+        {"request": request, "user": user, "branch_stats": branch_stats},
+    )
+
+
+@app.get("/audit-logs", response_class=HTMLResponse)
+def audit_logs_page(request: Request, business_type: str = "", actor_name: str = "", date_from: str = "", date_to: str = "", user=Depends(auth_dep)):
+    if user["role"] not in ALL_MANAGE_ROLES:
+        raise HTTPException(status_code=403, detail="无权查看审计日志")
+    conn = get_db()
+    cursor = conn.cursor()
+    conditions = []
+    params = []
+    if business_type:
+        conditions.append("al.business_type = ?")
+        params.append(business_type)
+    if actor_name:
+        conditions.append("al.actor_name LIKE ?")
+        params.append(f"%{actor_name}%")
+    if date_from:
+        conditions.append("al.created_at >= ?")
+        params.append(date_from)
+    if date_to:
+        conditions.append("al.created_at <= ?")
+        params.append(date_to)
+    where_clause = " AND ".join(conditions) if conditions else "1=1"
+    sql = f"SELECT al.* FROM audit_logs al WHERE {where_clause} ORDER BY al.id DESC LIMIT 500"
+    cursor.execute(sql, params)
+    logs = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return templates.TemplateResponse(
+        "audit_logs.html",
+        {"request": request, "user": user, "logs": logs, "business_type": business_type, "actor_name": actor_name, "date_from": date_from, "date_to": date_to},
+    )
+
+
+@app.get("/approval-chains", response_class=HTMLResponse)
+def approval_chains_page(request: Request, user=Depends(auth_dep)):
+    if user["role"] != "总号掌柜":
+        raise HTTPException(status_code=403, detail="仅总号掌柜可配置审批链")
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM approval_chains ORDER BY business_type, step_order")
+    chains = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return templates.TemplateResponse(
+        "approval_chains.html",
+        {"request": request, "user": user, "chains": chains},
+    )
+
+
+@app.post("/approval-chains/create")
+def approval_chain_create(request: Request, business_type: str = Form(...), amount_threshold: float = Form(default=0), step_order: int = Form(...), role_required: str = Form(...), description: str = Form(default=""), user=Depends(auth_dep)):
+    if user["role"] != "总号掌柜":
+        raise HTTPException(status_code=403, detail="仅总号掌柜可配置审批链")
+    conn = get_db()
+    cursor = conn.cursor()
+    today = date.today().isoformat()
+    cursor.execute(
+        "INSERT INTO approval_chains (business_type, amount_threshold, step_order, role_required, description, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        (business_type, amount_threshold, step_order, role_required, description, today),
+    )
+    add_audit_log("审批链", cursor.lastrowid, "新增审批规则", user, f"{business_type} 金额阈值 {amount_threshold} 步骤 {step_order} 角色 {role_required}", conn)
+    conn.commit()
+    conn.close()
+    return RedirectResponse("/approval-chains", status_code=303)
+
 
 
 @app.post("/bills/{bill_id}/exception")

@@ -209,13 +209,25 @@
                 <a href="/collections" class="btn btn-outline-secondary w-100 mb-2">
                     <i class="bi bi-bell me-2"></i>催收追偿管理
                 </a>
+                <a href="/overdue-warnings" class="btn btn-outline-warning w-100 mb-2">
+                    <i class="bi bi-exclamation-triangle me-2"></i>逾期预警
+                </a>
+                <a href="/branch-monitor" class="btn btn-outline-secondary w-100 mb-2">
+                    <i class="bi bi-building me-2"></i>分号融资监控
+                </a>
                 {% if user.role in ('总号掌柜', '稽核员') %}
                 <a href="/credit-limits" class="btn btn-outline-secondary w-100 mb-2">
                     <i class="bi bi-shield-check me-2"></i>额度风控管理
                 </a>
+                <a href="/audit-logs" class="btn btn-outline-secondary w-100 mb-2">
+                    <i class="bi bi-journal-text me-2"></i>审批留痕审计
+                </a>
                 {% endif %}
-                <a href="/reports" class="btn btn-outline-secondary w-100">
+                <a href="/reports" class="btn btn-outline-secondary w-100 mb-2">
                     <i class="bi bi-bar-chart me-2"></i>统计报表
+                </a>
+                <a href="/risk-ratings" class="btn btn-outline-secondary w-100">
+                    <i class="bi bi-star me-2"></i>客户风险评级
                 </a>
             </div>
         </div>
@@ -227,12 +239,12 @@
             <div class="card-body" style="font-size: 0.85rem;">
                 <ul class="list-unstyled mb-0">
                     <li class="mb-2"><i class="bi bi-1-circle me-1" style="color: var(--qz-secondary);"></i>票号必须唯一，高额汇票（≥10000两）须复核</li>
-                    <li class="mb-2"><i class="bi bi-2-circle me-1" style="color: var(--qz-secondary);"></i>兑付金额不得超票面金额</li>
-                    <li class="mb-2"><i class="bi bi-3-circle me-1" style="color: var(--qz-secondary);"></i>已作废/已兑付/挂失/冻结汇票不可背书</li>
-                    <li class="mb-2"><i class="bi bi-4-circle me-1" style="color: var(--qz-secondary);"></i>兑付完成自动生成分号清算记录</li>
-                    <li class="mb-2"><i class="bi bi-5-circle me-1" style="color: var(--qz-secondary);"></i>签发/兑付须符合掌柜/经办人/分号三级额度</li>
-                    <li class="mb-2"><i class="bi bi-6-circle me-1" style="color: var(--qz-secondary);"></i>挂失/冻结汇票可追回恢复，冲正仅限总号掌柜</li>
-                    <li><i class="bi bi-7-circle me-1" style="color: var(--qz-secondary);"></i>清算记录经掌柜清算、总号/稽核对账方完成</li>
+                    <li class="mb-2"><i class="bi bi-2-circle me-1" style="color: var(--qz-secondary);"></i>多级协同审批：经办人→复核人→掌柜逐级审批</li>
+                    <li class="mb-2"><i class="bi bi-3-circle me-1" style="color: var(--qz-secondary);"></i>融资放款自动占用客户授信，结清自动释放</li>
+                    <li class="mb-2"><i class="bi bi-4-circle me-1" style="color: var(--qz-secondary);"></i>逾期自动预警，到期前7天/3天自动提醒</li>
+                    <li class="mb-2"><i class="bi bi-5-circle me-1" style="color: var(--qz-secondary);"></i>融资到期可申请展期，经复核+掌柜审批</li>
+                    <li class="mb-2"><i class="bi bi-6-circle me-1" style="color: var(--qz-secondary);"></i>坏账支持部分核销，逐笔审批管理</li>
+                    <li><i class="bi bi-7-circle me-1" style="color: var(--qz-secondary);"></i>审批全程留痕审计，可按业务/人员/时间查询</li>
                 </ul>
             </div>
         </div>

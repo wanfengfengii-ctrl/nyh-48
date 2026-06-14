@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+
+{% block title %}融资展期申请 - 传统钱庄汇票协同清算与额度风控系统{% endblock %}
+
+{% block content %}
+<div class="mb-3">
+    <a href="/finance/loans/{{ loan.id }}" class="text-decoration-none" style="color: var(--qz-secondary);">
+        <i class="bi bi-arrow-left me-1"></i>返回融资详情
+    </a>
+</div>
+
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card card-qz mb-4">
+            <div class="card-header">
+                <i class="bi bi-calendar-plus me-2"></i>融资信息
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4">
+                        <strong style="color: var(--qz-secondary);">票号</strong>
+                        <div>{{ loan.bill_no }}</div>
+                    </div>
+                    <div class="col-md-4">
+                        <strong style="color: var(--qz-secondary);">客户</strong>
+                        <div>{{ loan.customer_name }}</div>
+                    </div>
+                    <div class="col-md-4">
+                        <strong style="color: var(--qz-secondary);">融资金额</strong>
+                        <div class="fw-bold" style="color: var(--qz-primary);">{{ loan.loan_amount }} 两</div>
+                    </div>
+                </div>
+                <hr>
+                <div class="row">
+                    <div class="col-md-4">
+                        <strong style="color: var(--qz-secondary);">年利率</strong>
+                        <div>{{ loan.rate_annual }}％</div>
+                    </div>
+                    <div class="col-md-4">
+                        <strong style="color: var(--qz-secondary);">当前到期日</strong>
+                        <div class="fw-bold text-danger">{{ loan.due_date }}</div>
+                    </div>
+                    <div class="col-md-4">
+                        <strong style="color: var(--qz-secondary);">已还金额</strong>
+                        <div>{{ loan.paid_amount|default(0) }} 两</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card card-qz">
+            <div class="card-header">
+                <i class="bi bi-pencil-square me-2"></i>展期申请
+            </div>
+            <div class="card-body p-4">
+                <form method="post" action="/finance/loans/{{ loan.id }}/extend">
+                    <div class="mb-3">
+                        <label for="extension_months" class="form-label fw-bold">
+                            <i class="bi bi-calendar-range me-1"></i>展期月数
+                        </label>
+                        <select class="form-select" id="extension_months" name="extension_months" required>
+                            <option value="">-- 选择展期月数 --</option>
+                            <option value="1">1 个月</option>
+                            <option value="2">2 个月</option>
+                            <option value="3">3 个月</option>
+                            <option value="6">6 个月</option>
+                            <option value="12">12 个月</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="new_due_date" class="form-label fw-bold">
+                            <i class="bi bi-calendar-event me-1"></i>新到期日
+                        </label>
+                        <input type="date" class="form-control" id="new_due_date" name="new_due_date" required>
+                        <div class="form-text">原到期日：{{ loan.due_date }}，新到期日必须晚于原到期日</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="new_rate_annual" class="form-label fw-bold">
+                            <i class="bi bi-percent me-1"></i>展期后年利率（％）
+                        </label>
+                        <input type="number" class="form-control" id="new_rate_annual" name="new_rate_annual"
+                               step="0.01" min="0" placeholder="不填则维持原利率 {{ loan.rate_annual }}％">
+                    </div>
+                    <div class="mb-3">
+                        <label for="extension_reason" class="form-label fw-bold">
+                            <i class="bi bi-chat-left-text me-1"></i>展期原因
+                        </label>
+                        <textarea class="form-control" id="extension_reason" name="extension_reason" rows="3"
+                                  required placeholder="请详细说明展期原因"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label for="remark" class="form-label fw-bold">
+                            <i class="bi bi-pencil me-1"></i>备注
+                        </label>
+                        <textarea class="form-control" id="remark" name="remark" rows="2"
+                                  placeholder="可选填写备注"></textarea>
+                    </div>
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                        <a href="/finance/loans/{{ loan.id }}" class="btn btn-outline-secondary">取消</a>
+                        <button type="submit" class="btn btn-qz"
+                                onclick="return confirm('确认提交展期申请？');">
+                            <i class="bi bi-check-circle me-2"></i>提交申请
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

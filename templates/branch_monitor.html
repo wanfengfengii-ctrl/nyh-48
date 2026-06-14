@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+
+{% block title %}分号融资监控 - 传统钱庄汇票协同清算与额度风控系统{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="fw-bold mb-0" style="color: var(--qz-primary);">
+        <i class="bi bi-building me-2"></i>分号融资监控
+    </h4>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-2">
+        <div class="stat-card">
+            <div class="stat-number">{{ branches_data|sum(attribute='total_loans') }}</div>
+            <div class="stat-label"><i class="bi bi-list-ol me-1"></i>总融资笔数</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-2">
+        <div class="stat-card">
+            <div class="stat-number" style="color: #198754;">{{ branches_data|sum(attribute='active_loans') }}</div>
+            <div class="stat-label"><i class="bi bi-graph-up me-1"></i>活跃融资</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-2">
+        <div class="stat-card">
+            <div class="stat-number" style="color: #dc3545;">{{ branches_data|sum(attribute='overdue_loans') }}</div>
+            <div class="stat-label"><i class="bi bi-exclamation-triangle me-1"></i>逾期融资</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="stat-card">
+            <div class="stat-number" style="color: var(--qz-primary);">{{ "%.0f"|format(branches_data|sum(attribute='total_loan_amount')) }}</div>
+            <div class="stat-label"><i class="bi bi-cash-stack me-1"></i>融资总额（两）</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="stat-card">
+            <div class="stat-number" style="color: #fd7e14;">{{ "%.0f"|format(branches_data|sum(attribute='overdue_amount')) }}</div>
+            <div class="stat-label"><i class="bi bi-exclamation-diamond me-1"></i>逾期总额（两）</div>
+        </div>
+    </div>
+</div>
+
+<div class="card card-qz mb-4">
+    <div class="card-header">
+        <i class="bi bi-table me-2"></i>各分号融资明细
+    </div>
+    <div class="card-body p-0">
+        {% if branches_data %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead style="background-color: var(--qz-light);">
+                    <tr>
+                        <th>分号名称</th>
+                        <th>融资笔数</th>
+                        <th>活跃笔数</th>
+                        <th>逾期笔数</th>
+                        <th>融资总额(两)</th>
+                        <th>逾期金额(两)</th>
+                        <th>已还金额(两)</th>
+                        <th>未还金额(两)</th>
+                        <th>逾期率</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for b in branches_data %}
+                    {% set overdue_rate = (b.overdue_amount / b.total_loan_amount * 100) if b.total_loan_amount > 0 else 0 %}
+                    <tr>
+                        <td><strong>{{ b.branch_name }}</strong></td>
+                        <td>{{ b.total_loans }}</td>
+                        <td>{{ b.active_loans }}</td>
+                        <td>
+                            {% if b.overdue_loans > 0 %}
+                            <span class="text-danger fw-bold">{{ b.overdue_loans }}</span>
+                            {% else %}
+                            <span>0</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ "%.0f"|format(b.total_loan_amount) }}</td>
+                        <td>{{ "%.0f"|format(b.overdue_amount) }}</td>
+                        <td>{{ "%.0f"|format(b.paid_amount) }}</td>
+                        <td>{{ "%.0f"|format(b.outstanding_amount) }}</td>
+                        <td style="min-width: 140px;">
+                            <div class="d-flex align-items-center">
+                                <div class="progress flex-grow-1 me-2" style="height: 20px;">
+                                    {% if overdue_rate > 20 %}
+                                    <div class="progress-bar bg-danger" style="width: {{ min(overdue_rate, 100) }}%;">
+                                        {{ "%.1f"|format(overdue_rate) }}%
+                                    </div>
+                                    {% elif overdue_rate > 10 %}
+                                    <div class="progress-bar bg-warning" style="width: {{ min(overdue_rate, 100) }}%;">
+                                        {{ "%.1f"|format(overdue_rate) }}%
+                                    </div>
+                                    {% else %}
+                                    <div class="progress-bar bg-success" style="width: {{ min(overdue_rate, 100) }}%;">
+                                        {{ "%.1f"|format(overdue_rate) }}%
+                                    </div>
+                                    {% endif %}
+                                </div>
+                                <span class="fw-bold" style="font-size: 0.85rem;
+                                    {% if overdue_rate > 20 %}color: #dc3545;
+                                    {% elif overdue_rate > 10 %}color: #fd7e14;
+                                    {% else %}color: #198754;
+                                    {% endif %}">
+                                    {{ "%.1f"|format(overdue_rate) }}%
+                                </span>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5 text-muted">
+            <i class="bi bi-inbox fs-1 d-block mb-3"></i>
+            <p>暂无分号融资数据</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{% if branches_data %}
+<div class="card card-qz">
+    <div class="card-header">
+        <i class="bi bi-bar-chart-line me-2"></i>分号逾期风险概览
+    </div>
+    <div class="card-body">
+        {% for b in branches_data %}
+        {% set overdue_rate = (b.overdue_amount / b.total_loan_amount * 100) if b.total_loan_amount > 0 else 0 %}
+        {% set bar_width = (b.total_loan_amount / branches_data|map(attribute='total_loan_amount')|max * 100) if branches_data|map(attribute='total_loan_amount')|max > 0 else 0 %}
+        <div class="mb-3">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+                <span class="fw-bold">{{ b.branch_name }}</span>
+                <span class="small">
+                    融资总额 <strong style="color: var(--qz-primary);">{{ "%.0f"|format(b.total_loan_amount) }}</strong> 两
+                    <span class="mx-1">|</span>
+                    逾期 <strong style="color: #dc3545;">{{ "%.0f"|format(b.overdue_amount) }}</strong> 两
+                    <span class="mx-1">|</span>
+                    逾期率
+                    <strong style="{% if overdue_rate > 20 %}color: #dc3545;{% elif overdue_rate > 10 %}color: #fd7e14;{% else %}color: #198754;{% endif %}">
+                        {{ "%.1f"|format(overdue_rate) }}%
+                    </strong>
+                </span>
+            </div>
+            <div class="progress" style="height: 24px; background-color: #f0e6d3;">
+                {% set paid_pct = (b.paid_amount / b.total_loan_amount * 100) if b.total_loan_amount > 0 else 0 %}
+                {% set overdue_pct = (b.overdue_amount / b.total_loan_amount * 100) if b.total_loan_amount > 0 else 0 %}
+                {% set outstanding_pct = (b.outstanding_amount / b.total_loan_amount * 100) if b.total_loan_amount > 0 else 0 %}
+                {% if paid_pct > 0 %}
+                <div class="progress-bar bg-success" style="width: {{ paid_pct }}%;" title="已还 {{ '%.0f'|format(b.paid_amount) }} 两">
+                    {% if paid_pct > 10 %}已还{% endif %}
+                </div>
+                {% endif %}
+                {% if overdue_pct > 0 %}
+                <div class="progress-bar bg-danger" style="width: {{ overdue_pct }}%;" title="逾期 {{ '%.0f'|format(b.overdue_amount) }} 两">
+                    {% if overdue_pct > 8 %}逾期{% endif %}
+                </div>
+                {% endif %}
+                {% if outstanding_pct > 0 %}
+                <div class="progress-bar" style="width: {{ outstanding_pct }}%; background-color: var(--qz-accent);" title="未还 {{ '%.0f'|format(b.outstanding_amount) }} 两">
+                    {% if outstanding_pct > 10 %}未还{% endif %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+        <div class="d-flex gap-4 mt-3 pt-2 border-top" style="border-color: var(--qz-accent) !important;">
+            <span><i class="bi bi-square-fill me-1" style="color: #198754;"></i>已还金额</span>
+            <span><i class="bi bi-square-fill me-1" style="color: #dc3545;"></i>逾期金额</span>
+            <span><i class="bi bi-square-fill me-1" style="color: var(--qz-accent);"></i>未还金额</span>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

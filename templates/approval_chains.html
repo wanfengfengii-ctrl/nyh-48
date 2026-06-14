@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+
+{% block title %}审批链配置 - 传统钱庄汇票协同清算与额度风控系统{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="fw-bold mb-0" style="color: var(--qz-primary);">
+        <i class="bi bi-diagram-3 me-2"></i>审批链配置
+    </h4>
+</div>
+
+{% if chains %}
+{% set ns = namespace(current_type='') %}
+<div class="card card-qz mb-4">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead style="background-color: var(--qz-light);">
+                    <tr>
+                        <th>业务类型</th>
+                        <th>金额阈值</th>
+                        <th>审批步骤</th>
+                        <th>审批角色</th>
+                        <th>说明</th>
+                        <th>创建时间</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for c in chains %}
+                    {% if c.business_type != ns.current_type %}
+                    {% set ns.current_type = c.business_type %}
+                    <tr style="background-color: var(--qz-light);">
+                        <td colspan="6" class="fw-bold" style="color: var(--qz-primary);">
+                            <i class="bi bi-tag me-1"></i>{{ c.business_type }}
+                        </td>
+                    </tr>
+                    {% endif %}
+                    <tr>
+                        <td>{{ c.business_type }}</td>
+                        <td>
+                            {% if c.amount_threshold == 0 %}
+                            0 两以上
+                            {% else %}
+                            {{ c.amount_threshold }} 两以上
+                            {% endif %}
+                        </td>
+                        <td>第{{ c.step_order }}步</td>
+                        <td>
+                            {% if c.role_required == '复核人' %}
+                            <span class="badge bg-info text-dark">复核人</span>
+                            {% elif c.role_required == '分号掌柜' %}
+                            <span class="badge bg-warning text-dark">分号掌柜</span>
+                            {% elif c.role_required == '总号掌柜' %}
+                            <span class="badge bg-danger">总号掌柜</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ c.description or '—' }}</td>
+                        <td><small>{{ c.created_at }}</small></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="card card-qz mb-4">
+    <div class="card-body text-center py-5 text-muted">
+        <i class="bi bi-diagram-3 fs-1 d-block mb-3"></i>
+        <p>暂无审批链配置记录</p>
+    </div>
+</div>
+{% endif %}
+
+<div class="card card-qz">
+    <div class="card-header">
+        <i class="bi bi-plus-circle me-2"></i>新增审批链规则
+    </div>
+    <div class="card-body">
+        <form method="post" action="/approval-chains/create">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label for="business_type" class="form-label fw-bold">业务类型</label>
+                    <select class="form-select" id="business_type" name="business_type" required>
+                        <option value="">请选择</option>
+                        <option value="兑付">兑付</option>
+                        <option value="押汇融资">押汇融资</option>
+                        <option value="展期">展期</option>
+                        <option value="核销">核销</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label for="amount_threshold" class="form-label fw-bold">金额阈值（两）</label>
+                    <input type="number" class="form-control" id="amount_threshold" name="amount_threshold" min="0" required>
+                </div>
+                <div class="col-md-4">
+                    <label for="step_order" class="form-label fw-bold">审批步骤</label>
+                    <input type="number" class="form-control" id="step_order" name="step_order" min="1" required>
+                </div>
+                <div class="col-md-4">
+                    <label for="role_required" class="form-label fw-bold">审批角色</label>
+                    <select class="form-select" id="role_required" name="role_required" required>
+                        <option value="">请选择</option>
+                        <option value="复核人">复核人</option>
+                        <option value="分号掌柜">分号掌柜</option>
+                        <option value="总号掌柜">总号掌柜</option>
+                    </select>
+                </div>
+                <div class="col-md-8">
+                    <label for="description" class="form-label fw-bold">说明</label>
+                    <input type="text" class="form-control" id="description" name="description">
+                </div>
+                <div class="col-12">
+                    <button type="submit" class="btn btn-qz">
+                        <i class="bi bi-plus-circle me-1"></i>添加规则
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

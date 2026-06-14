@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+
+{% block title %}部分核销 - 传统钱庄汇票协同清算与额度风控系统{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="fw-bold mb-0" style="color: var(--qz-primary);">
+        <i class="bi bi-scissors me-2"></i>部分核销
+    </h4>
+    {% if user.role in ('总号掌柜', '分号掌柜') and bad_debts %}
+    <button class="btn btn-qz" data-bs-toggle="modal" data-bs-target="#createWriteoffModal">
+        <i class="bi bi-plus-circle me-2"></i>新建核销
+    </button>
+    {% endif %}
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-6">
+        <div class="stat-card">
+            <div class="stat-number" style="color: #fd7e14;">{{ writeoffs|selectattr('status', 'equalto', '待审批')|list|length }}</div>
+            <div class="stat-label"><i class="bi bi-hourglass-split me-1"></i>待审批数</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-6">
+        <div class="stat-card">
+            <div class="stat-number" style="color: #198754;">{{ writeoffs|selectattr('status', 'equalto', '已批准')|list|length }}</div>
+            <div class="stat-label"><i class="bi bi-check-circle me-1"></i>已批准数</div>
+        </div>
+    </div>
+</div>
+
+<div class="card card-qz">
+    <div class="card-body p-0">
+        {% if writeoffs %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead style="background-color: var(--qz-light);">
+                    <tr>
+                        <th>票号</th>
+                        <th>客户</th>
+                        <th>核销本金（两）</th>
+                        <th>核销利息（两）</th>
+                        <th>核销日期</th>
+                        <th>核销原因</th>
+                        <th>经办人</th>
+                        <th>审批人</th>
+                        <th>状态</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for w in writeoffs %}
+                    <tr>
+                        <td><strong>{{ w.bill_no }}</strong></td>
+                        <td>{{ w.customer_name }}</td>
+                        <td>{{ "%.2f"|format(w.writeoff_principal) }}</td>
+                        <td>{{ "%.2f"|format(w.writeoff_interest) }}</td>
+                        <td>{{ w.writeoff_date }}</td>
+                        <td>{{ w.writeoff_reason }}</td>
+                        <td>{{ w.operator_name }}</td>
+                        <td>{{ w.approver_name or '—' }}</td>
+                        <td>
+                            {% if w.status == '待审批' %}
+                            <span class="badge bg-warning text-dark">待审批</span>
+                            {% elif w.status == '已批准' %}
+                            <span class="badge bg-success">已批准</span>
+                            {% else %}
+                            <span class="badge bg-danger">已拒绝</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if w.status == '待审批' and user.role == '总号掌柜' %}
+                            <form method="post" action="/partial-writeoffs/{{ w.id }}/approve" class="d-inline">
+                                <button type="submit" name="action" value="approve" class="btn btn-sm btn-success"
+                                        onclick="return confirm('确认批准此核销申请？')">
+                                    <i class="bi bi-check me-1"></i>批准
+                                </button>
+                            </form>
+                            <form method="post" action="/partial-writeoffs/{{ w.id }}/approve" class="d-inline">
+                                <button type="submit" name="action" value="reject" class="btn btn-sm btn-outline-danger"
+                                        onclick="return confirm('确认拒绝此核销申请？')">
+                                    <i class="bi bi-x me-1"></i>拒绝
+                                </button>
+                            </form>
+                            {% else %}
+                            <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5 text-muted">
+            <i class="bi bi-scissors fs-1 d-block mb-3"></i>
+            <p>暂无核销记录</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="modal fade" id="createWriteoffModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="/partial-writeoffs/create">
+                <div class="modal-header" style="background: linear-gradient(135deg, var(--qz-primary), var(--qz-secondary)); color: var(--qz-light);">
+                    <h5 class="modal-title"><i class="bi bi-scissors me-2"></i>新建部分核销</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="bad_debt_id" class="form-label fw-bold">
+                            <i class="bi bi-exclamation-triangle me-1"></i>坏账记录 <span class="text-danger">*</span>
+                        </label>
+                        <select class="form-select" id="bad_debt_id" name="bad_debt_id" required>
+                            <option value="">请选择坏账记录</option>
+                            {% for b in bad_debts %}
+                            <option value="{{ b.id }}">{{ b.bill_no }} - {{ b.customer_name }}（剩余本金 {{ "%.2f"|format(b.principal_remaining) }} 两）</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="writeoff_principal" class="form-label fw-bold">
+                            <i class="bi bi-wallet2 me-1"></i>核销本金（两） <span class="text-danger">*</span>
+                        </label>
+                        <input type="number" class="form-control" id="writeoff_principal" name="writeoff_principal"
+                               step="0.01" min="0" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="writeoff_interest" class="form-label fw-bold">
+                            <i class="bi bi-percent me-1"></i>核销利息（两） <span class="text-danger">*</span>
+                        </label>
+                        <input type="number" class="form-control" id="writeoff_interest" name="writeoff_interest"
+                               step="0.01" min="0" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="writeoff_date" class="form-label fw-bold">
+                            <i class="bi bi-calendar me-1"></i>核销日期 <span class="text-danger">*</span>
+                        </label>
+                        <input type="date" class="form-control" id="writeoff_date" name="writeoff_date" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="writeoff_reason" class="form-label fw-bold">
+                            <i class="bi bi-chat-left-text me-1"></i>核销原因 <span class="text-danger">*</span>
+                        </label>
+                        <textarea class="form-control" id="writeoff_reason" name="writeoff_reason" rows="3" required></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label for="remark" class="form-label fw-bold">
+                            <i class="bi bi-journal-text me-1"></i>备注
+                        </label>
+                        <textarea class="form-control" id="remark" name="remark" rows="2"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-qz"><i class="bi bi-save me-1"></i>提交核销</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,204 @@
+{% extends "base.html" %}
+
+{% block title %}批量催收 - 传统钱庄汇票协同清算与额度风控系统{% endblock %}
+
+{% block content %}
+<div class="mb-3">
+    <a href="/collections" class="text-decoration-none" style="color: var(--qz-secondary);">
+        <i class="bi bi-arrow-left me-1"></i>返回催收追偿
+    </a>
+</div>
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="fw-bold mb-0" style="color: var(--qz-primary);">
+        <i class="bi bi-bells me-2"></i>批量催收
+    </h4>
+    <span class="badge bg-danger fs-6">逾期融资：{{ overdue_loans|length }} 笔</span>
+</div>
+
+<div class="card card-qz mb-4">
+    <div class="card-header">
+        <i class="bi bi-info-circle me-2"></i>操作说明
+    </div>
+    <div class="card-body">
+        <p class="mb-0">选择逾期融资记录，批量创建催收提醒。可勾选多笔逾期融资，统一设置催收类型、催收日期和催收内容后一次性提交。</p>
+    </div>
+</div>
+
+{% if overdue_loans %}
+<form method="post" action="/batch-collections" id="batchCollectionForm">
+    <div class="card card-qz mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-list-check me-2"></i>逾期融资列表</span>
+            <div class="form-check mb-0">
+                <input class="form-check-input" type="checkbox" id="selectAll" onchange="toggleSelectAll()">
+                <label class="form-check-label" for="selectAll" style="color: var(--qz-light);">全选</label>
+            </div>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead style="background-color: var(--qz-light);">
+                        <tr>
+                            <th style="width: 50px;">选择</th>
+                            <th>票号</th>
+                            <th>客户</th>
+                            <th>融资金额（两）</th>
+                            <th>已还金额（两）</th>
+                            <th>到期日</th>
+                            <th>状态</th>
+                            <th>经办人</th>
+                            <th>分号</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for loan in overdue_loans %}
+                        <tr>
+                            <td>
+                                <div class="form-check">
+                                    <input class="form-check-input loan-checkbox" type="checkbox"
+                                           name="loan_ids" value="{{ loan.id }}" id="loan_{{ loan.id }}"
+                                           onchange="updateSelectedCount()">
+                                </div>
+                            </td>
+                            <td><strong>{{ loan.bill_no }}</strong></td>
+                            <td>{{ loan.customer_name }}</td>
+                            <td>{{ "%.2f"|format(loan.loan_amount) }}</td>
+                            <td>{{ "%.2f"|format(loan.paid_amount) }}</td>
+                            <td>{{ loan.due_date }}</td>
+                            <td>
+                                {% if loan.status == '已逾期' %}
+                                <span class="badge bg-danger">已逾期</span>
+                                {% elif loan.status == '逾期催收中' %}
+                                <span class="badge bg-warning text-dark">逾期催收中</span>
+                                {% else %}
+                                <span class="badge badge-overdue">{{ loan.status }}</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ loan.applicant_name }}</td>
+                            <td>{{ loan.branch_name }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="card card-qz mb-4">
+        <div class="card-header">
+            <i class="bi bi-pencil-square me-2"></i>催收设置
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="collection_type" class="form-label fw-bold">
+                        <i class="bi bi-tag me-1"></i>催收类型 <span class="text-danger">*</span>
+                    </label>
+                    <select class="form-select" id="collection_type" name="collection_type" required>
+                        <option value="到期提醒">到期提醒</option>
+                        <option value="逾期催收" selected>逾期催收</option>
+                        <option value="法律催收">法律催收</option>
+                    </select>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label for="collection_date" class="form-label fw-bold">
+                        <i class="bi bi-calendar me-1"></i>催收日期 <span class="text-danger">*</span>
+                    </label>
+                    <input type="date" class="form-control" id="collection_date" name="collection_date" required>
+                </div>
+            </div>
+            <div class="mb-3">
+                <label for="collection_content" class="form-label fw-bold">
+                    <i class="bi bi-journal-text me-1"></i>催收内容 <span class="text-danger">*</span>
+                </label>
+                <textarea class="form-control" id="collection_content" name="collection_content" rows="4"
+                          placeholder="请输入催收内容，将应用于所有选中的逾期融资记录" required></textarea>
+            </div>
+            <div class="d-flex justify-content-between align-items-center">
+                <span class="text-muted" id="selectedInfo">已选择 0 笔融资</span>
+                <button type="submit" class="btn btn-qz" onclick="return validateForm()">
+                    <i class="bi bi-send me-1"></i>提交批量催收
+                </button>
+            </div>
+        </div>
+    </div>
+</form>
+{% else %}
+<div class="card card-qz">
+    <div class="card-body text-center py-5">
+        <i class="bi bi-check-circle fs-1 d-block mb-3 text-success"></i>
+        <p class="text-muted mb-0">暂无逾期融资记录</p>
+    </div>
+</div>
+{% endif %}
+
+{% if results or errors %}
+<div class="card card-qz mb-4">
+    <div class="card-header">
+        <i class="bi bi-clipboard-check me-2"></i>批量催收结果
+    </div>
+    <div class="card-body">
+        {% if results %}
+        <div class="alert alert-success mb-3">
+            <i class="bi bi-check-circle me-1"></i><strong>成功 {{ results|length }} 条：</strong>
+            <ul class="mb-0 mt-2">
+                {% for r in results %}
+                <li>{{ r }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+        {% if errors %}
+        <div class="alert alert-danger mb-0">
+            <i class="bi bi-exclamation-triangle me-1"></i><strong>失败 {{ errors|length }} 条：</strong>
+            <ul class="mb-0 mt-2">
+                {% for e in errors %}
+                <li>{{ e }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.getElementById('collection_date').value = new Date().toISOString().split('T')[0];
+
+function toggleSelectAll() {
+    const checked = document.getElementById('selectAll').checked;
+    document.querySelectorAll('.loan-checkbox').forEach(function(cb) {
+        cb.checked = checked;
+    });
+    updateSelectedCount();
+}
+
+function updateSelectedCount() {
+    const count = document.querySelectorAll('.loan-checkbox:checked').length;
+    document.getElementById('selectedInfo').textContent = '已选择 ' + count + ' 笔融资';
+    const all = document.querySelectorAll('.loan-checkbox');
+    const allChecked = document.querySelectorAll('.loan-checkbox:checked');
+    document.getElementById('selectAll').checked = all.length > 0 && all.length === allChecked.length;
+}
+
+function validateForm() {
+    const checked = document.querySelectorAll('.loan-checkbox:checked');
+    if (checked.length === 0) {
+        alert('请至少选择一笔逾期融资');
+        return false;
+    }
+    if (!document.getElementById('collection_date').value) {
+        alert('请选择催收日期');
+        return false;
+    }
+    if (!document.getElementById('collection_content').value.trim()) {
+        alert('请填写催收内容');
+        return false;
+    }
+    return confirm('确认对 ' + checked.length + ' 笔逾期融资提交催收？');
+}
+</script>
+{% endblock %}

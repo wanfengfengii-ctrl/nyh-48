@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+
+{% block title %}审批留痕审计 - 传统钱庄汇票协同清算与额度风控系统{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+    <h4 class="fw-bold" style="color: var(--qz-primary);">
+        <i class="bi bi-journal-text me-2"></i>审批留痕审计
+    </h4>
+</div>
+
+<div class="card card-qz mb-4">
+    <div class="card-header">
+        <i class="bi bi-funnel me-2"></i>筛选条件
+    </div>
+    <div class="card-body">
+        <form method="get" action="/audit-logs">
+            <div class="row g-3 align-items-end">
+                <div class="col-md-3">
+                    <label class="form-label fw-bold">业务类型</label>
+                    <select class="form-select" name="business_type">
+                        <option value="">全部</option>
+                        <option value="兑付" {{ 'selected' if form and form.business_type == '兑付' }}>兑付</option>
+                        <option value="押汇融资" {{ 'selected' if form and form.business_type == '押汇融资' }}>押汇融资</option>
+                        <option value="展期" {{ 'selected' if form and form.business_type == '展期' }}>展期</option>
+                        <option value="核销" {{ 'selected' if form and form.business_type == '核销' }}>核销</option>
+                        <option value="催收" {{ 'selected' if form and form.business_type == '催收' }}>催收</option>
+                        <option value="其他" {{ 'selected' if form and form.business_type == '其他' }}>其他</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label fw-bold">操作人</label>
+                    <input type="text" class="form-control" name="actor_name"
+                           value="{{ form.actor_name if form else '' }}" placeholder="输入操作人姓名">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label fw-bold">起始日期</label>
+                    <input type="date" class="form-control" name="date_from"
+                           value="{{ form.date_from if form else '' }}">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label fw-bold">截止日期</label>
+                    <input type="date" class="form-control" name="date_to"
+                           value="{{ form.date_to if form else '' }}">
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-qz w-100">
+                        <i class="bi bi-search me-1"></i>查询
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card card-qz">
+    <div class="card-header">
+        <i class="bi bi-list-ul me-2"></i>审计记录
+    </div>
+    <div class="card-body p-0">
+        {% if logs %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead style="background-color: var(--qz-light);">
+                    <tr>
+                        <th>业务类型</th>
+                        <th>业务ID</th>
+                        <th>操作</th>
+                        <th>操作人</th>
+                        <th>角色</th>
+                        <th>详情</th>
+                        <th>时间</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for log in logs %}
+                    <tr>
+                        <td>
+                            {% if log.business_type == '兑付' %}
+                            <span class="badge bg-primary">兑付</span>
+                            {% elif log.business_type == '押汇融资' %}
+                            <span class="badge bg-success">押汇融资</span>
+                            {% elif log.business_type == '展期' %}
+                            <span class="badge bg-info text-dark">展期</span>
+                            {% elif log.business_type == '核销' %}
+                            <span class="badge bg-secondary">核销</span>
+                            {% elif log.business_type == '催收' %}
+                            <span class="badge bg-warning text-dark">催收</span>
+                            {% else %}
+                            <span class="badge bg-dark">其他</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ log.business_id }}</td>
+                        <td>
+                            {% if log.action == '通过' %}
+                            <span class="badge bg-success">通过</span>
+                            {% elif log.action == '拒绝' %}
+                            <span class="badge bg-danger">拒绝</span>
+                            {% elif log.action == '退回' %}
+                            <span class="badge bg-warning text-dark">退回</span>
+                            {% else %}
+                            <span class="badge bg-primary">{{ log.action }}</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ log.actor_name }}</td>
+                        <td><small>{{ log.actor_role }}</small></td>
+                        <td><small>{{ log.detail }}</small></td>
+                        <td><small>{{ log.created_at }}</small></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% if logs|length >= 200 %}
+        <div class="text-center py-3 text-muted">
+            <i class="bi bi-info-circle me-1"></i>记录超过200条，仅显示最近200条，请使用筛选条件缩小范围
+        </div>
+        {% endif %}
+        {% else %}
+        <div class="text-center py-5 text-muted">
+            <i class="bi bi-journal-text fs-1 d-block mb-3"></i>
+            <p>暂无审计记录</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

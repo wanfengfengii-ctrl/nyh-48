@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+
+{% block title %}逾期预警管理 - 传统钱庄汇票协同清算与额度风控系统{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="fw-bold mb-0" style="color: var(--qz-primary);">
+        <i class="bi bi-exclamation-triangle me-2"></i>逾期预警管理
+    </h4>
+    <form method="post" action="/overdue-warnings/check">
+        <button type="submit" class="btn btn-qz">
+            <i class="bi bi-search me-1"></i>手动检查逾期
+        </button>
+    </form>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-4">
+        <div class="stat-card">
+            <div class="stat-number" style="color: #fd7e14;">
+                {{ warnings|selectattr('status', 'equalto', '待处理')|list|length }}
+            </div>
+            <div class="stat-label"><i class="bi bi-clock me-1"></i>待处理预警数</div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="stat-card">
+            <div class="stat-number" style="color: #198754;">
+                {{ warnings|selectattr('status', 'equalto', '已通知')|list|length }}
+            </div>
+            <div class="stat-label"><i class="bi bi-bell me-1"></i>已通知数</div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="stat-card">
+            <div class="stat-number" style="color: #dc3545;">{{ overdue_loans|length }}</div>
+            <div class="stat-label"><i class="bi bi-exclamation-circle me-1"></i>逾期融资笔数</div>
+        </div>
+    </div>
+</div>
+
+<div class="card card-qz">
+    <div class="card-header">
+        <i class="bi bi-list-ul me-2"></i>预警列表
+    </div>
+    <div class="card-body p-0">
+        {% if warnings %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead style="background-color: var(--qz-light);">
+                    <tr>
+                        <th>票号</th>
+                        <th>客户</th>
+                        <th>预警类型</th>
+                        <th>预警日期</th>
+                        <th>距到期天数</th>
+                        <th>预警信息</th>
+                        <th>状态</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for w in warnings %}
+                    <tr>
+                        <td><strong>{{ w.bill_no }}</strong></td>
+                        <td>{{ w.customer_name }}</td>
+                        <td>{{ w.warning_type }}</td>
+                        <td>{{ w.warning_date }}</td>
+                        <td>
+                            {% if w.days_before_due <= 0 %}
+                            <span class="text-danger fw-bold">{{ w.days_before_due }}</span>
+                            {% elif w.days_before_due <= 7 %}
+                            <span class="text-warning fw-bold">{{ w.days_before_due }}</span>
+                            {% else %}
+                            <span>{{ w.days_before_due }}</span>
+                            {% endif %}
+                        </td>
+                        <td><small>{{ w.message }}</small></td>
+                        <td>
+                            {% if w.status == '待处理' %}
+                            <span class="badge badge-pending">待处理</span>
+                            {% elif w.status == '已通知' %}
+                            <span class="badge badge-valid">已通知</span>
+                            {% elif w.status == '已处理' %}
+                            <span class="badge badge-info">已处理</span>
+                            {% else %}
+                            <span class="badge badge-voided">已忽略</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if w.status == '待处理' %}
+                            <form method="post" action="/overdue-warnings/{{ w.id }}/status" class="d-inline">
+                                <select name="status" class="form-select form-select-sm d-inline-block" style="width: auto; display: inline-block;" onchange="this.form.submit()">
+                                    <option value="" selected disabled>变更状态</option>
+                                    <option value="已通知">已通知</option>
+                                    <option value="已处理">已处理</option>
+                                    <option value="已忽略">已忽略</option>
+                                </select>
+                            </form>
+                            {% else %}
+                            <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5 text-muted">
+            <i class="bi bi-check-circle fs-1 d-block mb-3"></i>
+            <p>暂无预警记录</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
